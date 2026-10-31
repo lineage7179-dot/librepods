@@ -1,13 +1,10 @@
-# Builds the LibrePods fork with the "Open app & play" press-and-hold action and
-# publishes the APK as a GitHub release of this repository, so it can be downloaded
-# straight from a phone.
+# Builds this LibrePods fork (extra stem actions: open an app and play) and publishes the
+# APK as a GitHub release of this repository, so it can be downloaded straight from a phone.
 #
-# Signing: set these repository secrets once so every build can update the previous one:
-#   CUSTOM_KEYSTORE_B64       base64 of a .jks/.p12 keystore
-#   CUSTOM_KEYSTORE_PASSWORD  keystore (and key) password
-#   CUSTOM_KEY_ALIAS          key alias
-# Without them the build is signed with a throwaway key, and each new build has to be
-# installed fresh (uninstall first).
+# Signing: add one repository secret, CUSTOM_SIGNING_PASSPHRASE (12+ characters). The signing
+# key is derived from it on every build (.github/scripts/signing_key.py), so new builds install
+# over old ones; nothing key-related is stored in the repository. Without the secret each build
+# gets a throwaway key (uninstall before installing).
 
 name: Build custom APK
 
@@ -19,6 +16,7 @@ on:
     paths:
       - 'android/**'
       - '.github/workflows/custom-apk.yml'
+      - '.github/scripts/**'
 
 permissions:
   contents: write
@@ -51,29 +49,20 @@ jobs:
           yes | sdkmanager --licenses > /dev/null
           sdkmanager "ndk;30.0.14904198" "cmake;3.22.1"
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
       - name: Prepare signing key
         id: signing
         env:
-          KEYSTORE_B64: ${{ secrets.CUSTOM_KEYSTORE_B64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.CUSTOM_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.CUSTOM_KEY_ALIAS }}
+          PASSPHRASE: ${{ secrets.CUSTOM_SIGNING_PASSPHRASE }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > android/custom.keystore
-          else
-            echo "::warning::No signing secrets set, using a throwaway key. Uninstall the previous build before installing this one."
-            KEYSTORE_PASSWORD="throwaway-$(openssl rand -hex 8)"
-            KEY_ALIAS=custom
-            keytool -genkeypair -keystore android/custom.keystore -storetype PKCS12 \
-              -storepass "$KEYSTORE_PASSWORD" -keypass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" \
-              -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=LibrePods custom build"
+          if [ -z "$PASSPHRASE" ]; then
+            echo "::warning::CUSTOM_SIGNING_PASSPHRASE is not set, using a throwaway key. Uninstall the previous build before installing this one."
           fi
-          {
-            echo "RELEASE_STORE_FILE=../custom.keystore"
-            echo "RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD"
-            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS"
-            echo "RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD"
-          } > android/local.properties
+          python3 -m pip install --quiet "cryptography>=44"
+          python3 .github/scripts/signing_key.py
 
       - name: Build release APK
         id: build
@@ -107,8 +96,8 @@ jobs:
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" "$FILE" \
             --target "$GITHUB_SHA" \
-            --title "LibrePods custom: long press opens an app and plays ($TAG)" \
-            --notes "Personal build of LibrePods with an extra press-and-hold action: open a chosen app and start playback. Not an official LibrePods release. Uninstall the official LibrePods before installing (different signature)." \
+            --title "LibrePods custom ($TAG): open an app and play from the AirPods stem" \
+            --notes "Personal build of LibrePods with extra stem actions (long press or idle double press opens a chosen app and plays). Not an official LibrePods release. Signed with this fork's own key: uninstall the official LibrePods before the first install." \
             --latest
 
       # Lets the person helping with this fork read build results without Actions API access:
@@ -117,7 +106,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          OUTCOMES: "sdk=${{ steps.sdk.outcome }} signing=${{ steps.signing.outcome }} build=${{ steps.build.outcome }} apk=${{ steps.apk.outcome }} release=${{ steps.release.outcome }}"
+          OUTCOMES: "sdk=${{ steps.sdk.outcome }} signing=${{ steps.signing.outcome }} signing_mode=${{ steps.signing.outputs.mode }} cert_sha256=${{ steps.signing.outputs.fingerprint }} build=${{ steps.build.outcome }} apk=${{ steps.apk.outcome }} release=${{ steps.release.outcome }}"
           TAG: ${{ steps.apk.outputs.tag }}
         run: |
           mkdir -p /tmp/ci-logs
