@@ -297,4 +297,11 @@
     <string name="permission_notification_access_description">마지막에 재생하던 다른 앱이 아니라, 선택한 앱에서 정확히 재생을 시작합니다.</string>
     <string name="permission_allowed">허용됨</string>
     <string name="permission_tap_to_allow">탭해서 허용</string>
+    <string name="double_press_airpods">AirPods 두 번 누르기</string>
+    <string name="double_press_both">양쪽 AirPods</string>
+    <string name="double_press_next_track">다음 곡</string>
+    <string name="double_press_launch_app_when_idle">대기 중이면 앱 실행 + 재생</string>
+    <string name="double_press_launch_summary">대기 중: %1$s 실행</string>
+    <string name="double_press_description">음악이 재생 중일 때는 두 번 누르면 원래대로 다음 곡으로 넘어갑니다.</string>
+    <string name="double_press_app_description">음악이 안 나올 때 어느 쪽 AirPods든 두 번 누르면 이 앱을 열고, 마지막으로 듣던 음악을 이어서 재생합니다.</string>
 </resources>

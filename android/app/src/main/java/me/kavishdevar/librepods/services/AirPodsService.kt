@@ -1243,6 +1243,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     AppLaunchPlayer.launchAndPlay(this, targetPackage)
                 }
             }
+
+            StemAction.NEXT_TRACK_OR_LAUNCH_APP -> {
+                val musicPlaying = getSystemService(AudioManager::class.java)?.isMusicActive == true
+                val targetPackage =
+                    sharedPreferences.getString(StemAction.DOUBLE_PRESS_APP_PACKAGE_KEY, null)
+                if (musicPlaying || targetPackage.isNullOrBlank()) {
+                    Log.d("AirPodsParser", "Double press: next track (music playing: $musicPlaying, app: $targetPackage)")
+                    MediaController.sendNextTrack()
+                } else {
+                    Log.d("AirPodsParser", "Double press while idle: launching $targetPackage and starting playback")
+                    AppLaunchPlayer.launchAndPlay(this, targetPackage)
+                }
+            }
         }
     }
 

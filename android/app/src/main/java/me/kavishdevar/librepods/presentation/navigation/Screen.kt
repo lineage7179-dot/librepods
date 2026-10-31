@@ -68,6 +68,8 @@ sealed interface Screen: NavKey {
     data class LongPress(
         val bud: String
     ): Screen
+    @Serializable
+    data object DoublePress: Screen
 
     @Serializable
     data class CallControl(

@@ -95,15 +95,14 @@ data class LaunchableApp(
 )
 
 /**
- * Settings shown under the press-and-hold screen when "Open app & play" is selected:
- * which app to open, and the two permissions that make it work reliably.
+ * Settings shown when an "open app & play" action is selected: which app to open (stored
+ * under [prefKey]), and the two permissions that make it work reliably.
  */
 @Composable
-fun LaunchAppSettings(side: String) {
+fun LaunchAppSettings(prefKey: String, description: String) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
-    val prefKey = StemAction.launchAppPackageKey(side)
-    val selectedPackage = rememberLongPressAppPackage(side)
+    val selectedPackage = rememberSettingsString(prefKey)
     val selectedApp = remember(selectedPackage) { selectedPackage?.let { loadApp(context, it) } }
     var showPicker by remember { mutableStateOf(false) }
 
@@ -132,7 +131,7 @@ fun LaunchAppSettings(side: String) {
 
     StyledList(
         title = stringResource(R.string.app_to_launch),
-        description = stringResource(R.string.app_to_launch_description)
+        description = description
     ) {
         StyledListItem(
             name = selectedName,
@@ -178,12 +177,16 @@ fun LaunchAppSettings(side: String) {
     }
 }
 
-/** The package picked for [side] ("left"/"right"), kept in sync with SharedPreferences. */
+/** The package picked for the long press of [side] ("left"/"right"). */
 @Composable
-fun rememberLongPressAppPackage(side: String): String? {
+fun rememberLongPressAppPackage(side: String): String? =
+    rememberSettingsString(StemAction.launchAppPackageKey(side))
+
+/** A string from the app's "settings" SharedPreferences, kept in sync while it changes. */
+@Composable
+fun rememberSettingsString(key: String): String? {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
-    val key = StemAction.launchAppPackageKey(side)
     var value by remember(key) { mutableStateOf(prefs.getString(key, null)) }
 
     DisposableEffect(prefs, key) {

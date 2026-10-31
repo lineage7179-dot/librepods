@@ -307,4 +307,11 @@
     <string name="permission_notification_access_description">Starts playback in the chosen app instead of whatever played last.</string>
     <string name="permission_allowed">Allowed</string>
     <string name="permission_tap_to_allow">Tap to allow</string>
+    <string name="double_press_airpods">Double-Press AirPods</string>
+    <string name="double_press_both">Both AirPods</string>
+    <string name="double_press_next_track">Next Track</string>
+    <string name="double_press_launch_app_when_idle">Open App &amp; Play When Idle</string>
+    <string name="double_press_launch_summary">When idle: open %1$s</string>
+    <string name="double_press_description">While music is playing, a double press still skips to the next track.</string>
+    <string name="double_press_app_description">When nothing is playing, double-press either AirPod to open this app and resume what it was playing.</string>
 </resources>

@@ -22,6 +22,7 @@ import me.kavishdevar.librepods.presentation.screens.AdaptiveStrengthScreen
 import me.kavishdevar.librepods.presentation.screens.AirPodsSettingsRoute
 import me.kavishdevar.librepods.presentation.screens.AppSettingsScreen
 import me.kavishdevar.librepods.presentation.screens.CallControlScreen
+import me.kavishdevar.librepods.presentation.screens.DoublePressScreen
 import me.kavishdevar.librepods.presentation.screens.EqualizerRoute
 import me.kavishdevar.librepods.presentation.screens.HeadTrackingScreen
 import me.kavishdevar.librepods.presentation.screens.HearingAidAdjustmentsScreen
@@ -102,6 +103,7 @@ fun AppNavGraph(
                                         Screen.LongPress("Right")
                                     )
                                 },
+                                navigateToDoublePress = { navigate(Screen.DoublePress) },
                                 navigateToPurchase = { navigate(Screen.Purchase) },
                                 navigateToAdaptiveStrength = { navigate(Screen.AdaptiveStrength) },
                                 navigateToEqualizer = { navigate(Screen.Equalizer) },
@@ -229,6 +231,15 @@ fun AppNavGraph(
                             LongPress(
                                 viewModel = airPodsViewModel,
                                 name = screen.bud,
+                                navigateToPurchase = ::navigateToPurchase
+                            )
+                        }
+
+                    Screen.DoublePress ->
+                        NavEntry(screen) {
+                            if (!airPodsViewModel.isReady) LoadingScreen()
+                            DoublePressScreen(
+                                viewModel = airPodsViewModel,
                                 navigateToPurchase = ::navigateToPurchase
                             )
                         }

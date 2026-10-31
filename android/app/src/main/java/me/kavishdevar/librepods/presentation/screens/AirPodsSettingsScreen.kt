@@ -113,6 +113,7 @@ import me.kavishdevar.librepods.presentation.components.ConnectionSettings
 import me.kavishdevar.librepods.presentation.components.HearingHealthSettings
 import me.kavishdevar.librepods.presentation.components.MaterialButtonStyle
 import me.kavishdevar.librepods.presentation.components.NoiseControlSettings
+import me.kavishdevar.librepods.presentation.components.DoublePressSettings
 import me.kavishdevar.librepods.presentation.components.PressAndHoldSettings
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledListItem
@@ -136,6 +137,7 @@ fun AirPodsSettingsRoute(
     navigateToHearingAid: () -> Unit,
     navigateToLeftLongPress: () -> Unit,
     navigateToRightLongPress: () -> Unit,
+    navigateToDoublePress: () -> Unit = {},
     navigateToPurchase: () -> Unit,
     navigateToAdaptiveStrength: () -> Unit,
     navigateToEqualizer: () -> Unit,
@@ -181,6 +183,7 @@ fun AirPodsSettingsRoute(
             navigateToHearingAid = navigateToHearingAid,
             navigateToLeftLongPress = navigateToLeftLongPress,
             navigateToRightLongPress = navigateToRightLongPress,
+            navigateToDoublePress = navigateToDoublePress,
             navigateToPurchase = navigateToPurchase,
             navigateToAdaptiveStrength = navigateToAdaptiveStrength,
             navigateToEqualizer = navigateToEqualizer,
@@ -223,6 +226,7 @@ fun AirPodsSettingsScreen(
         navigateToHearingAid: () -> Unit,
         navigateToLeftLongPress: () -> Unit,
         navigateToRightLongPress: () -> Unit,
+        navigateToDoublePress: () -> Unit = {},
         navigateToPurchase: () -> Unit,
         navigateToAdaptiveStrength: () -> Unit,
         navigateToEqualizer: () -> Unit,
@@ -379,6 +383,12 @@ fun AirPodsSettingsScreen(
                         navigateToLeftLongPress = navigateToLeftLongPress,
                         navigateToRightLongPress = navigateToRightLongPress
                     )
+                }
+                item(key = "spacer_double_press") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                item(key = "double_press") {
+                    DoublePressSettings(navigateToDoublePress = navigateToDoublePress)
                 }
             }
 

@@ -151,7 +151,10 @@ fun LongPress(viewModel: AirPodsViewModel, name: String, navigateToPurchase: () 
 
         if (longPressAction == StemAction.LAUNCH_APP_AND_PLAY) {
             Spacer(modifier = Modifier.height(32.dp))
-            LaunchAppSettings(side = name)
+            LaunchAppSettings(
+                prefKey = StemAction.launchAppPackageKey(name),
+                description = stringResource(R.string.app_to_launch_description)
+            )
         }
 
         if (longPressAction == StemAction.CYCLE_NOISE_CONTROL_MODES) {
