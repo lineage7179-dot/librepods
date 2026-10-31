@@ -1,0 +1,139 @@
+# Builds the LibrePods fork with the "Open app & play" press-and-hold action and
+# publishes the APK as a GitHub release of this repository, so it can be downloaded
+# straight from a phone.
+#
+# Signing: set these repository secrets once so every build can update the previous one:
+#   CUSTOM_KEYSTORE_B64       base64 of a .jks/.p12 keystore
+#   CUSTOM_KEYSTORE_PASSWORD  keystore (and key) password
+#   CUSTOM_KEY_ALIAS          key alias
+# Without them the build is signed with a throwaway key, and each new build has to be
+# installed fresh (uninstall first).
+
+name: Build custom APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/long-press-launch-app
+    paths:
+      - 'android/**'
+      - '.github/workflows/custom-apk.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: custom-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GRADLE_OPTS: '-Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g" -Dkotlin.daemon.jvm.options="-Xmx3g"'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Install NDK and CMake
+        id: sdk
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "ndk;30.0.14904198" "cmake;3.22.1"
+
+      - name: Prepare signing key
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.CUSTOM_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.CUSTOM_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CUSTOM_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/custom.keystore
+          else
+            echo "::warning::No signing secrets set, using a throwaway key. Uninstall the previous build before installing this one."
+            KEYSTORE_PASSWORD="throwaway-$(openssl rand -hex 8)"
+            KEY_ALIAS=custom
+            keytool -genkeypair -keystore android/custom.keystore -storetype PKCS12 \
+              -storepass "$KEYSTORE_PASSWORD" -keypass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" \
+              -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=LibrePods custom build"
+          fi
+          {
+            echo "RELEASE_STORE_FILE=../custom.keystore"
+            echo "RELEASE_STORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS"
+            echo "RELEASE_KEY_PASSWORD=$KEYSTORE_PASSWORD"
+          } > android/local.properties
+
+      - name: Build release APK
+        id: build
+        working-directory: android
+        run: |
+          set -o pipefail
+          ./gradlew assembleFossRelease --stacktrace 2>&1 | tee ../build.log
+
+      - name: Name the APK
+        id: apk
+        run: |
+          VERSION=$(grep -E '^(major|minor|patch)=' android/version.properties | cut -d= -f2 | paste -sd.)
+          SHA=$(git rev-parse --short HEAD)
+          FILE="LibrePods-custom-v${VERSION}-${SHA}.apk"
+          cp android/app/build/outputs/apk/foss/release/app-foss-release.apk "$FILE"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "tag=custom-v${VERSION}-${SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: librepods-custom-apk
+          path: ${{ steps.apk.outputs.file }}
+
+      - name: Publish release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.apk.outputs.tag }}
+          FILE: ${{ steps.apk.outputs.file }}
+        run: |
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "$FILE" \
+            --target "$GITHUB_SHA" \
+            --title "LibrePods custom: long press opens an app and plays ($TAG)" \
+            --notes "Personal build of LibrePods with an extra press-and-hold action: open a chosen app and start playback. Not an official LibrePods release. Uninstall the official LibrePods before installing (different signature)." \
+            --latest
+
+      # Lets the person helping with this fork read build results without Actions API access:
+      # the log and step outcomes are force-pushed to the ci-logs branch.
+      - name: Publish CI log
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOMES: "sdk=${{ steps.sdk.outcome }} signing=${{ steps.signing.outcome }} build=${{ steps.build.outcome }} apk=${{ steps.apk.outcome }} release=${{ steps.release.outcome }}"
+          TAG: ${{ steps.apk.outputs.tag }}
+        run: |
+          mkdir -p /tmp/ci-logs
+          if [ -f build.log ]; then tail -c 3000000 build.log > /tmp/ci-logs/build.log; else echo "build step did not run" > /tmp/ci-logs/build.log; fi
+          {
+            echo "job=${{ job.status }}"
+            echo "sha=$GITHUB_SHA"
+            echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "tag=$TAG"
+            echo "$OUTCOMES"
+            date -u
+          } > /tmp/ci-logs/STATUS
+          cd /tmp/ci-logs
+          git init -q -b ci-logs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "CI log for $GITHUB_SHA (${{ job.status }})"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-logs

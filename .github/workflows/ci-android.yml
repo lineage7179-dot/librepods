@@ -20,6 +20,8 @@ on:
 
 jobs:
   build:
+    # Upstream-only (needs Blacksmith runners and release secrets); forks use custom-apk.yml.
+    if: github.repository_owner == 'librepods-org' || github.repository_owner == 'kavishdevar'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     env:
       GRADLE_OPTS: '-Dorg.gradle.jvmargs="-Xmx16g -XX:MaxMetaspaceSize=2g -XX:+UseParallelGC" -Dkotlin.daemon.jvm.options="-Xmx6g,-XX:+UseParallelGC" -Dorg.gradle.workers.max=8'
