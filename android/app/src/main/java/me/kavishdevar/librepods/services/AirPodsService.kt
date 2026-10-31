@@ -696,10 +696,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     device = null
 //                    isConnectedLocally = false
                     popupShown = false
-                    updateNotificationContent(false)
                     aacpManager.disconnected()
                     BluetoothConnectionManager.aacpSocket = null
                     BluetoothConnectionManager.attSocket = null
+                    updateNotificationContent(false)
                 }
             }
         }
@@ -1764,13 +1764,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     fun startForegroundNotification() {
         val disconnectedNotificationChannel = NotificationChannel(
             "background_service_status",
-            "Background Service Status",
+            getString(R.string.notification_channel_background_service),
             NotificationManager.IMPORTANCE_NONE
         )
 
         val connectedNotificationChannel = NotificationChannel(
             "airpods_connection_status",
-            "AirPods Connection Status",
+            getString(R.string.notification_channel_airpods_connection),
             NotificationManager.IMPORTANCE_LOW,
         )
 
@@ -1790,6 +1790,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         notificationManager.createNotificationChannel(connectedNotificationChannel)
         notificationManager.createNotificationChannel(socketFailureChannel)
 
+        try {
+            startForeground(1, buildBackgroundServiceNotification())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Notification shown in the foreground-service slot (id 1) while AirPods are not connected.
+     * Android keeps a foreground service's notification visible until the user turns its
+     * category off; tapping it opens that category's settings.
+     */
+    private fun buildBackgroundServiceNotification(): Notification {
         val notificationSettingsIntent =
             Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
                 putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
@@ -1802,17 +1815,12 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, "background_service_status")
-            .setSmallIcon(R.drawable.airpods).setContentTitle("Background Service Running")
-            .setContentText("Useless notification, disable it by clicking on it.")
+        return NotificationCompat.Builder(this, "background_service_status")
+            .setSmallIcon(R.drawable.airpods)
+            .setContentTitle(getString(R.string.background_service_notification_title))
+            .setContentText(getString(R.string.background_service_notification_text))
             .setContentIntent(pendingIntentNotifDisable).setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true).build()
-
-        try {
-            startForeground(1, notification)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 
     @Suppress("KotlinUnreachableCode")
@@ -2077,9 +2085,6 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        if (BluetoothConnectionManager.aacpSocket == null) {
-            return
-        }
         if (BluetoothConnectionManager.aacpSocket?.isConnected == true) {
             val updatedNotificationBuilder =
                 NotificationCompat.Builder(this, "airpods_connection_status")
@@ -2124,11 +2129,16 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
             val updatedNotification = updatedNotificationBuilder.build()
 
-            notificationManager.notify(2, updatedNotification)
-            notificationManager.cancel(1)
-        } else if (!connected) {
+            // Show the connection status in the foreground-service slot itself, so only one
+            // LibrePods notification is visible while connected.
+            notificationManager.notify(1, updatedNotification)
             notificationManager.cancel(2)
-        } else if (!config.bleOnlyMode && BluetoothConnectionManager.aacpSocket?.isConnected != true) {
+        } else if (!connected) {
+            // Not connected (or the socket is already gone): back to the background notice,
+            // which stays hidden once its category is turned off.
+            notificationManager.notify(1, buildBackgroundServiceNotification())
+            notificationManager.cancel(2)
+        } else if (BluetoothConnectionManager.aacpSocket != null && !config.bleOnlyMode) {
             showSocketConnectionFailureNotification("BluetoothConnectionManager.aacpSocket? created, but not connected. Check logs")
         }
     }

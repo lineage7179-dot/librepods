@@ -314,4 +314,8 @@
     <string name="double_press_launch_summary">When idle: open %1$s</string>
     <string name="double_press_description">While music is playing, a double press still skips to the next track.</string>
     <string name="double_press_app_description">When nothing is playing, double-press either AirPod to open this app and resume what it was playing.</string>
+    <string name="notification_channel_background_service">Background service</string>
+    <string name="notification_channel_airpods_connection">AirPods connection</string>
+    <string name="background_service_notification_title">LibrePods is running in the background</string>
+    <string name="background_service_notification_text">Tap to turn this notification off. The AirPods notification still shows while they are connected.</string>
 </resources>

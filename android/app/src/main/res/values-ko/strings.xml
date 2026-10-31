@@ -304,4 +304,8 @@
     <string name="double_press_launch_summary">대기 중: %1$s 실행</string>
     <string name="double_press_description">음악이 재생 중일 때는 두 번 누르면 원래대로 다음 곡으로 넘어갑니다.</string>
     <string name="double_press_app_description">음악이 안 나올 때 어느 쪽 AirPods든 두 번 누르면 이 앱을 열고, 마지막으로 듣던 음악을 이어서 재생합니다.</string>
+    <string name="notification_channel_background_service">백그라운드 서비스</string>
+    <string name="notification_channel_airpods_connection">AirPods 연결 상태</string>
+    <string name="background_service_notification_title">LibrePods 백그라운드 실행 중</string>
+    <string name="background_service_notification_text">눌러서 이 알림을 끄세요. AirPods가 연결되면 연결 알림은 그대로 표시됩니다.</string>
 </resources>
