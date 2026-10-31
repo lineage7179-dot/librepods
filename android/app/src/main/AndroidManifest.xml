@@ -42,6 +42,21 @@
 <!--        android:maxSdkVersion="30" />-->
     <uses-permission android:name="com.android.vending.BILLING" />
 
+    <!-- "Open app & play" press-and-hold action: list launchable apps, find music apps,
+         and reach the chosen app's media button receiver. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+        </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".LibrePodsApplication"
         android:allowBackup="true"
@@ -112,6 +127,15 @@
             android:exported="true"
             android:foregroundServiceType="connectedDevice"
             android:permission="android.permission.BLUETOOTH_CONNECT" />
+        <service
+            android:name=".services.MediaSessionListenerService"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <service
             android:name=".services.AirPodsQSService"
             android:exported="true"

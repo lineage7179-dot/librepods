@@ -19,6 +19,8 @@
 package me.kavishdevar.librepods.presentation.components
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.data.StemAction
@@ -30,17 +32,8 @@ fun PressAndHoldSettings(
     navigateToLeftLongPress: () -> Unit,
     navigateToRightLongPress: () -> Unit
 ) {
-    val leftActionText = when (leftAction) {
-        StemAction.CYCLE_NOISE_CONTROL_MODES -> stringResource(R.string.listening_mode)
-        StemAction.DIGITAL_ASSISTANT -> "Digital Assistant"
-        else -> "INVALID!!"
-    }
-
-    val rightActionText = when (rightAction) {
-        StemAction.CYCLE_NOISE_CONTROL_MODES -> stringResource(R.string.listening_mode)
-        StemAction.DIGITAL_ASSISTANT -> "Digital Assistant"
-        else -> "INVALID!!"
-    }
+    val leftActionText = pressAndHoldActionText(leftAction, "left")
+    val rightActionText = pressAndHoldActionText(rightAction, "right")
 
     StyledList(
         title = stringResource(R.string.press_and_hold_airpods)
@@ -55,5 +48,21 @@ fun PressAndHoldSettings(
             description = rightActionText,
             onClick = navigateToRightLongPress,
         )
+    }
+}
+
+@Composable
+private fun pressAndHoldActionText(action: StemAction, side: String): String {
+    val context = LocalContext.current
+    val appPackage = rememberLongPressAppPackage(side)
+    val appLabel = remember(appPackage) { appPackage?.let { appLabelOrNull(context, it) } }
+
+    return when (action) {
+        StemAction.CYCLE_NOISE_CONTROL_MODES -> stringResource(R.string.listening_mode)
+        StemAction.DIGITAL_ASSISTANT -> stringResource(R.string.digital_assistant)
+        StemAction.LAUNCH_APP_AND_PLAY ->
+            if (appLabel != null) stringResource(R.string.launch_app_and_play_summary, appLabel)
+            else stringResource(R.string.launch_app_and_play)
+        else -> "INVALID!!"
     }
 }

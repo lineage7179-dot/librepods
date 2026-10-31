@@ -289,4 +289,22 @@
     <string name="eq_low">Low</string>
     <string name="eq_mid">Mid</string>
     <string name="eq_high">High</string>
+    <string name="launch_app_and_play">Open App &amp; Play</string>
+    <string name="launch_app_and_play_summary">Open %1$s</string>
+    <string name="app_to_launch">App to Open</string>
+    <string name="app_to_launch_description">Press and hold to open this app and resume what it was playing.</string>
+    <string name="choose_app">Choose an app</string>
+    <string name="search_apps">Search apps</string>
+    <string name="music_apps">Music apps</string>
+    <string name="other_apps">Other apps</string>
+    <string name="loading_apps">Loading apps…</string>
+    <string name="no_apps_found">No apps found</string>
+    <string name="required_permissions">Permissions</string>
+    <string name="launch_app_permissions_description">Notification access is only used to find the chosen app\'s player. Notifications are never read.</string>
+    <string name="permission_overlay">Display over other apps</string>
+    <string name="permission_overlay_description">Needed to open the app while LibrePods runs in the background.</string>
+    <string name="permission_notification_access">Notification access</string>
+    <string name="permission_notification_access_description">Starts playback in the chosen app instead of whatever played last.</string>
+    <string name="permission_allowed">Allowed</string>
+    <string name="permission_tap_to_allow">Tap to allow</string>
 </resources>

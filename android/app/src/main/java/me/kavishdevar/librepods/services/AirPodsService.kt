@@ -106,6 +106,7 @@ import me.kavishdevar.librepods.presentation.overlays.IslandWindow
 import me.kavishdevar.librepods.presentation.overlays.PopupWindow
 import me.kavishdevar.librepods.presentation.widgets.BatteryWidget
 import me.kavishdevar.librepods.presentation.widgets.NoiseControlWidget
+import me.kavishdevar.librepods.utils.AppLaunchPlayer
 import me.kavishdevar.librepods.utils.GestureDetector
 import me.kavishdevar.librepods.utils.HeadTracking
 import me.kavishdevar.librepods.utils.MediaController
@@ -1104,7 +1105,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 } else {
                     val action = getActionFor(bud, stemPressType)
                     Log.d("AirPodsParser", "$bud $stemPressType action: $action")
-                    action?.let { executeStemAction(it) }
+                    action?.let { executeStemAction(it, bud) }
                 }
             }
 
@@ -1196,7 +1197,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         }
     }
 
-    private fun executeStemAction(action: StemAction) {
+    private fun executeStemAction(
+        action: StemAction,
+        bud: AACPManager.Companion.StemPressBudType
+    ) {
         when (action) {
             StemAction.defaultActions[StemPressType.SINGLE_PRESS] -> {
                 Log.d(
@@ -1226,6 +1230,18 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 sendBroadcast(Intent("me.kavishdevar.librepods.SET_ANC_MODE").apply {
                     setPackage(packageName)
                 })
+            }
+
+            StemAction.LAUNCH_APP_AND_PLAY -> {
+                val side = if (bud == AACPManager.Companion.StemPressBudType.LEFT) "left" else "right"
+                val targetPackage =
+                    sharedPreferences.getString(StemAction.launchAppPackageKey(side), null)
+                if (targetPackage.isNullOrBlank()) {
+                    Log.w("AirPodsParser", "Launch app action on $side bud, but no app is selected")
+                } else {
+                    Log.d("AirPodsParser", "Launching $targetPackage and starting playback ($side bud)")
+                    AppLaunchPlayer.launchAndPlay(this, targetPackage)
+                }
             }
         }
     }

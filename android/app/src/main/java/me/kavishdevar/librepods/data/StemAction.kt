@@ -25,11 +25,16 @@ enum class StemAction {
     PREVIOUS_TRACK,
     NEXT_TRACK,
     DIGITAL_ASSISTANT,
-    CYCLE_NOISE_CONTROL_MODES;
+    CYCLE_NOISE_CONTROL_MODES,
+    LAUNCH_APP_AND_PLAY;
     companion object {
         fun fromString(action: String): StemAction? {
             return entries.find { it.name == action }
         }
+
+        /** SharedPreferences key holding the package opened by [LAUNCH_APP_AND_PLAY] for a bud ("left"/"right"). */
+        fun launchAppPackageKey(side: String): String =
+            if (side.lowercase() == "left") "left_long_press_app_package" else "right_long_press_app_package"
         val defaultActions: Map<AACPManager.Companion.StemPressType, StemAction> = mapOf(
             AACPManager.Companion.StemPressType.SINGLE_PRESS to PLAY_PAUSE,
             AACPManager.Companion.StemPressType.DOUBLE_PRESS to NEXT_TRACK,

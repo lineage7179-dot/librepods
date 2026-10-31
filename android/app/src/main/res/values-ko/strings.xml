@@ -279,4 +279,22 @@
     <string name="eq_low">저음</string>
     <string name="eq_mid">중음</string>
     <string name="eq_high">고음</string>
+    <string name="launch_app_and_play">앱 실행 + 음악 재생</string>
+    <string name="launch_app_and_play_summary">%1$s 실행</string>
+    <string name="app_to_launch">실행할 앱</string>
+    <string name="app_to_launch_description">길게 누르면 이 앱을 열고, 그 앱에서 마지막으로 듣던 음악을 이어서 재생합니다.</string>
+    <string name="choose_app">앱 선택</string>
+    <string name="search_apps">앱 검색</string>
+    <string name="music_apps">음악 앱</string>
+    <string name="other_apps">기타 앱</string>
+    <string name="loading_apps">앱 목록을 불러오는 중…</string>
+    <string name="no_apps_found">앱을 찾을 수 없습니다</string>
+    <string name="required_permissions">필요한 권한</string>
+    <string name="launch_app_permissions_description">알림 접근은 선택한 앱의 재생기를 찾는 데만 쓰이며, 알림 내용은 읽지 않습니다.</string>
+    <string name="permission_overlay">다른 앱 위에 표시</string>
+    <string name="permission_overlay_description">LibrePods가 백그라운드에 있을 때 앱을 열려면 필요합니다.</string>
+    <string name="permission_notification_access">알림 접근</string>
+    <string name="permission_notification_access_description">마지막에 재생하던 다른 앱이 아니라, 선택한 앱에서 정확히 재생을 시작합니다.</string>
+    <string name="permission_allowed">허용됨</string>
+    <string name="permission_tap_to_allow">탭해서 허용</string>
 </resources>

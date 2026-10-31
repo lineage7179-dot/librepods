@@ -51,6 +51,7 @@ import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.data.StemAction
+import me.kavishdevar.librepods.presentation.components.LaunchAppSettings
 import me.kavishdevar.librepods.presentation.components.ListItemOrientation
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledList
@@ -116,6 +117,18 @@ fun LongPress(viewModel: AirPodsViewModel, name: String, navigateToPurchase: () 
                 },
                 enabled = state.isPremium
             )
+
+            StyledListItem(
+                name = stringResource(R.string.launch_app_and_play),
+                selected = longPressAction == StemAction.LAUNCH_APP_AND_PLAY,
+                onClick = {
+                    viewModel.setLongPressAction(
+                        name,
+                        StemAction.LAUNCH_APP_AND_PLAY
+                    )
+                },
+                enabled = state.isPremium
+            )
         }
 
         if (!state.isPremium) {
@@ -134,6 +147,11 @@ fun LongPress(viewModel: AirPodsViewModel, name: String, navigateToPurchase: () 
                 )
             }
             Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        if (longPressAction == StemAction.LAUNCH_APP_AND_PLAY) {
+            Spacer(modifier = Modifier.height(32.dp))
+            LaunchAppSettings(side = name)
         }
 
         if (longPressAction == StemAction.CYCLE_NOISE_CONTROL_MODES) {
