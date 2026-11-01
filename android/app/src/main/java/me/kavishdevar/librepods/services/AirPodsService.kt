@@ -243,7 +243,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         }
 
         private const val HEAD_SHAKE_WATCHDOG_MS = 5_000L
-        private const val HEAD_SHAKE_COOLDOWN_MS = 1_500L
+        private const val HEAD_SHAKE_COOLDOWN_MS = 2_000L
 
         /** A call-gesture or test session older than this is considered abandoned. */
         private const val STALE_GESTURE_SESSION_MS = 60_000L
@@ -3292,15 +3292,29 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             headShakeStartedTracking = true
         }
         detector.startDetection(doNotStop = true, continuous = true) { nodded ->
-            if (!nodded) {
-                Log.d(TAG, "Head shake detected, cycling noise control mode")
-                sendBroadcast(Intent("me.kavishdevar.librepods.SET_ANC_MODE").apply {
-                    setPackage(packageName)
-                })
-                sendToast(getString(R.string.head_shake_detected_toast))
-            }
+            if (!nodded) toggleTransparencyAndNoiseCancellation()
             headShakeHandler.postDelayed({ refreshHeadShakeNoiseControl() }, HEAD_SHAKE_COOLDOWN_MS)
         }
+    }
+
+    /** Head shake: Transparency <-> Noise Cancellation (from Off or Adaptive: Transparency). */
+    private fun toggleTransparencyAndNoiseCancellation() {
+        val current = aacpManager.getControlCommandStatus(
+            AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE
+        )?.value?.firstOrNull()?.toInt() ?: ancNotification.status
+        // Listening mode values: 1 Off, 2 Noise Cancellation, 3 Transparency, 4 Adaptive.
+        val target = if (current == 3) 2 else 3
+        Log.d(TAG, "Head shake detected: listening mode $current -> $target")
+        aacpManager.sendControlCommand(
+            AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
+            target
+        )
+        sendToast(
+            getString(
+                if (target == 3) R.string.head_shake_toast_transparency
+                else R.string.head_shake_toast_noise_cancellation
+            )
+        )
     }
 
     private fun stopHeadShakeNoiseControl() {
