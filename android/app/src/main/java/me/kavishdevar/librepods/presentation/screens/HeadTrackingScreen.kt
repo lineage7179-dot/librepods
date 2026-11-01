@@ -470,6 +470,8 @@ private fun HeadShakeStatusLine(textColor: Color) {
         stringResource(R.string.head_shake_status_not_connected)
     } else if (current.inCall) {
         stringResource(R.string.head_shake_status_in_call)
+    } else if (!current.wearing) {
+        stringResource(R.string.head_shake_status_not_wearing)
     } else if (diagnostics == null || !diagnostics.running) {
         stringResource(R.string.head_shake_status_starting)
     } else {

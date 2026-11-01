@@ -316,4 +316,5 @@
     <string name="head_shake_status_not_connected">대기 중: AirPods가 LibrePods에 연결되지 않음</string>
     <string name="head_shake_status_in_call">통화 중이라 쉬는 중</string>
     <string name="head_shake_status_running">감지 중 · 머리 데이터 %1$d개 · 최근 최대 좌우 %2$d, 상하 %3$d · 흔들기 %4$d/%5$d · 감지 %6$d회</string>
+    <string name="head_shake_status_not_wearing">대기 중: AirPods를 끼고 있지 않음</string>
 </resources>

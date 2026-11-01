@@ -917,6 +917,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     "Ear Detection: ${earDetectionNotification.status[0]} ${earDetectionNotification.status[1]}"
                 )
                 processEarDetectionChange(earDetection)
+                headShakeHandler.post { refreshHeadShakeNoiseControl() }
             }
 
             override fun onConversationAwarenessReceived(conversationAwareness: ByteArray) {
@@ -3217,6 +3218,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     data class HeadShakeStatus(
         val enabled: Boolean,
         val connected: Boolean,
+        val wearing: Boolean,
         val inCall: Boolean,
         val trackingActive: Boolean,
         val headTrackingPackets: Long,
@@ -3226,6 +3228,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     fun headShakeStatus(): HeadShakeStatus = HeadShakeStatus(
         enabled = sharedPreferences.getBoolean("head_shake_noise_control", false),
         connected = BluetoothConnectionManager.aacpSocket?.isConnected == true,
+        wearing = isWearingAirPods(),
         inCall = isInCall,
         trackingActive = isHeadTrackingActive,
         headTrackingPackets = headTrackingPacketCount,
@@ -3242,7 +3245,21 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             sharedPreferences.getBoolean("head_shake_noise_control", false) &&
             BluetoothConnectionManager.aacpSocket?.isConnected == true &&
-            !isInCall
+            !isInCall &&
+            isWearingAirPods()
+
+    /**
+     * At least one AirPod in an ear, from the AirPods' ear-detection reports or, because those
+     * only arrive on changes, from their recent BLE advertisements.
+     */
+    private fun isWearingAirPods(): Boolean {
+        val reportedInEar = earDetectionNotification.status.any { it == 0x00.toByte() }
+        val ble = if (this::bleManager.isInitialized) bleManager.getMostRecentStatus() else null
+        val bleInEar = ble != null &&
+            System.currentTimeMillis() - ble.lastSeen < 30_000 &&
+            (ble.isLeftInEar || ble.isRightInEar)
+        return reportedInEar || bleInEar
+    }
 
     fun refreshHeadShakeNoiseControl() {
         if (isHeadShakeNoiseControlWanted()) startHeadShakeNoiseControl() else stopHeadShakeNoiseControl()

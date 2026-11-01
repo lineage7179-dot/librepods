@@ -326,4 +326,5 @@
     <string name="head_shake_status_not_connected">Waiting: AirPods are not connected to LibrePods</string>
     <string name="head_shake_status_in_call">Paused during a call</string>
     <string name="head_shake_status_running">Listening · head data %1$d · recent peak left/right %2$d, up/down %3$d · swings %4$d/%5$d · detected %6$d</string>
+    <string name="head_shake_status_not_wearing">Waiting: AirPods are not in your ears</string>
 </resources>
