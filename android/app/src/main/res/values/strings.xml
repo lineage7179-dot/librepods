@@ -319,5 +319,11 @@
     <string name="background_service_notification_title">LibrePods is running in the background</string>
     <string name="background_service_notification_text">Tap to turn this notification off. The AirPods notification still shows while they are connected.</string>
     <string name="head_shake_noise_control">Shake Head to Change Noise Control</string>
-    <string name="head_shake_noise_control_description">While wearing your AirPods, shake your head side to side two or three times to switch to the next listening mode (the modes chosen for press and hold). Off during calls. Uses a little more battery.</string>
+    <string name="head_shake_noise_control_description">While wearing your AirPods, quickly shake your head side to side two or three times to switch to the next listening mode (the modes chosen for press and hold). If nothing happens, lower the threshold below. Off during calls. Uses a little more battery.</string>
+    <string name="head_shake_detected_toast">Head shake: noise control changed</string>
+    <string name="head_shake_sensitivity_value">Threshold %1$d (lower = more sensitive)</string>
+    <string name="head_shake_status_starting">Starting…</string>
+    <string name="head_shake_status_not_connected">Waiting: AirPods are not connected to LibrePods</string>
+    <string name="head_shake_status_in_call">Paused during a call</string>
+    <string name="head_shake_status_running">Listening · head data %1$d · recent peak left/right %2$d, up/down %3$d · swings %4$d/%5$d · detected %6$d</string>
 </resources>

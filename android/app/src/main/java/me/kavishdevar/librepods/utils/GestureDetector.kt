@@ -21,6 +21,9 @@
 package me.kavishdevar.librepods.utils
 
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
@@ -54,12 +57,30 @@ class GestureDetector(
 
         private const val MAX_VALID_ORIENTATION_VALUE = 6000
 
-        /** Continuous mode only looks at movements from this recent window. */
-        private const val CONTINUOUS_WINDOW_MS = 2500L
+        /** Continuous mode: alternating left/right swings needed within [SHAKE_WINDOW_MS]. */
+        const val SHAKE_REQUIRED_SWINGS = 3
+        private const val SHAKE_WINDOW_MS = 1500L
 
-        /** Slow moving average removed from the input in continuous mode (re-centres after turning around). */
-        private const val CONTINUOUS_BASELINE_ALPHA = 0.02
+        /** Slow moving average removed from the input in continuous mode. */
+        private const val SHAKE_BASELINE_ALPHA = 0.01
+
+        /** Window for the "recent peak" values shown in the settings screen. */
+        private const val DIAGNOSTIC_WINDOW_MS = 2000L
+
+        const val DEFAULT_SHAKE_THRESHOLD = 300
     }
+
+    /** Live numbers for the settings screen, so detection can be tuned on the device. */
+    data class ShakeDiagnostics(
+        val running: Boolean,
+        val samples: Long,
+        val ignoredSamples: Long,
+        val recentMaxHorizontal: Int,
+        val recentMaxVertical: Int,
+        val swings: Int,
+        val detections: Int,
+        val threshold: Int
+    )
 
     val audio = GestureFeedback(ServiceManager.getService()?.baseContext!!)
 
@@ -96,14 +117,48 @@ class GestureDetector(
     /** True while a detection session is active. */
     val isDetecting: Boolean get() = isRunning
 
+    /** When the current session started (uptime ms). */
+    var sessionStartedAt = 0L
+        private set
+
     /**
-     * Continuous mode: runs while AirPods are worn (not only during a call), stays silent,
-     * only reports head shakes, and ignores movements older than [CONTINUOUS_WINDOW_MS].
+     * Continuous mode: runs whenever AirPods are connected (not only during a call), stays
+     * silent and only reports head shakes, using a simple swing counter: the horizontal
+     * signal has to cross +/-[shakeThreshold] with alternating sign [SHAKE_REQUIRED_SWINGS]
+     * times within [SHAKE_WINDOW_MS], with more horizontal than vertical movement.
      */
     var isContinuous = false
         private set
+
+    @Volatile
+    var shakeThreshold: Int = DEFAULT_SHAKE_THRESHOLD
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val shakeLock = Any()
     private var horizontalBaseline: Double? = null
     private var verticalBaseline: Double? = null
+    private val shakeSwingTimes = ArrayDeque<Long>()
+    private var lastSwingSign = 0
+    private var shakeReported = false
+    private val recentMagnitudes = ArrayDeque<Triple<Long, Double, Double>>()
+    private var samplesSeen = 0L
+    private var ignoredSamples = 0L
+    private var recentMaxHorizontal = 0.0
+    private var recentMaxVertical = 0.0
+    private var shakeDetections = 0
+
+    fun shakeDiagnostics(): ShakeDiagnostics = synchronized(shakeLock) {
+        ShakeDiagnostics(
+            running = isRunning && isContinuous,
+            samples = samplesSeen,
+            ignoredSamples = ignoredSamples,
+            recentMaxHorizontal = recentMaxHorizontal.toInt(),
+            recentMaxVertical = recentMaxVertical.toInt(),
+            swings = shakeSwingTimes.size,
+            detections = shakeDetections,
+            threshold = shakeThreshold
+        )
+    }
 
     private var detectionJob: Job? = null
     private var gestureDetectedCallback: ((Boolean) -> Unit)? = null
@@ -126,17 +181,27 @@ fun startDetection(
         Log.d(TAG, "Starting gesture detection (continuous: $continuous)...")
         isRunning = true
         isContinuous = continuous
+        sessionStartedAt = SystemClock.uptimeMillis()
         gestureDetectedCallback = onGestureDetected
 
-        // In continuous mode the caller manages head tracking (without taking the AirPods over).
-        if (!continuous) Log.d(TAG, "started: ${airPodsService.startHeadTracking()}")
-
         clearData()
-        horizontalBaseline = null
-        verticalBaseline = null
-
         prevHorizontal = 0.0
         prevVertical = 0.0
+
+        if (continuous) {
+            // The caller manages head tracking; samples drive detection directly.
+            synchronized(shakeLock) {
+                horizontalBaseline = null
+                verticalBaseline = null
+                shakeSwingTimes.clear()
+                lastSwingSign = 0
+                shakeReported = false
+                recentMagnitudes.clear()
+            }
+            return
+        }
+
+        Log.d(TAG, "started: ${airPodsService.startHeadTracking()}")
 
         detectionJob = CoroutineScope(Dispatchers.Default).launch {
             while (isRunning) {
@@ -145,7 +210,7 @@ fun startDetection(
                 val gesture = detectGestures()
                 if (gesture != null) {
                     withContext(Dispatchers.Main) {
-                        if (!isContinuous) audio.playConfirmation(gesture)
+                        audio.playConfirmation(gesture)
 
                         gestureDetectedCallback?.invoke(gesture)
                         stopDetection(doNotStop)
@@ -173,14 +238,13 @@ fun startDetection(
     fun processHeadOrientation(horizontal: Int, vertical: Int) {
         if (!isRunning) return
 
-        if (abs(horizontal) > MAX_VALID_ORIENTATION_VALUE || abs(vertical) > MAX_VALID_ORIENTATION_VALUE) {
-            Log.d(TAG, "Ignoring likely calibration data: h=$horizontal, v=$vertical")
+        if (isContinuous) {
+            processShakeSample(horizontal, vertical)
             return
         }
 
-        if (isContinuous) {
-            val (centredHorizontal, centredVertical) = removeBaseline(horizontal.toDouble(), vertical.toDouble())
-            processCentredOrientation(centredHorizontal, centredVertical)
+        if (abs(horizontal) > MAX_VALID_ORIENTATION_VALUE || abs(vertical) > MAX_VALID_ORIENTATION_VALUE) {
+            Log.d(TAG, "Ignoring likely calibration data: h=$horizontal, v=$vertical")
             return
         }
 
@@ -230,33 +294,65 @@ fun startDetection(
         detectPeaksAndTroughs()
     }
 
-    private fun removeBaseline(horizontal: Double, vertical: Double): Pair<Double, Double> {
-        val h = horizontalBaseline?.let { it + CONTINUOUS_BASELINE_ALPHA * (horizontal - it) } ?: horizontal
-        val v = verticalBaseline?.let { it + CONTINUOUS_BASELINE_ALPHA * (vertical - it) } ?: vertical
-        horizontalBaseline = h
-        verticalBaseline = v
-        return Pair(horizontal - h, vertical - v)
-    }
+    /** Continuous mode: count alternating left/right swings of the (re-centred) horizontal signal. */
+    private fun processShakeSample(rawHorizontal: Int, rawVertical: Int) {
+        val now = SystemClock.uptimeMillis()
+        var detected = false
+        synchronized(shakeLock) {
+            samplesSeen++
+            if (abs(rawHorizontal) > MAX_VALID_ORIENTATION_VALUE || abs(rawVertical) > MAX_VALID_ORIENTATION_VALUE) {
+                ignoredSamples++
+                return
+            }
 
-    /** Continuous-mode input path: no audio feedback, values already centred. */
-    private fun processCentredOrientation(horizontal: Double, vertical: Double) {
-        prevHorizontal = horizontal
-        prevVertical = vertical
+            val hBase = horizontalBaseline?.let { it + SHAKE_BASELINE_ALPHA * (rawHorizontal - it) } ?: rawHorizontal.toDouble()
+            val vBase = verticalBaseline?.let { it + SHAKE_BASELINE_ALPHA * (rawVertical - it) } ?: rawVertical.toDouble()
+            horizontalBaseline = hBase
+            verticalBaseline = vBase
+            val h = rawHorizontal - hBase
+            val v = rawVertical - vBase
 
-        val smoothHorizontal = applySmoothing(horizontal, horizontalAvgBuffer)
-        val smoothVertical = applySmoothing(vertical, verticalAvgBuffer)
+            recentMagnitudes.addLast(Triple(now, abs(h), abs(v)))
+            while (recentMagnitudes.isNotEmpty() && now - recentMagnitudes.first().first > DIAGNOSTIC_WINDOW_MS) {
+                recentMagnitudes.removeFirst()
+            }
+            recentMaxHorizontal = recentMagnitudes.maxOf { it.second }
+            recentMaxVertical = recentMagnitudes.maxOf { it.third }
 
-        synchronized(horizontalBuffer) {
-            horizontalBuffer.add(smoothHorizontal)
-            if (horizontalBuffer.size > 100) horizontalBuffer.removeAt(0)
+            while (shakeSwingTimes.isNotEmpty() && now - shakeSwingTimes.first() > SHAKE_WINDOW_MS) {
+                shakeSwingTimes.removeFirst()
+            }
+            if (shakeSwingTimes.isEmpty()) lastSwingSign = 0
+
+            if (abs(h) >= shakeThreshold) {
+                val sign = if (h > 0) 1 else -1
+                if (sign != lastSwingSign) {
+                    shakeSwingTimes.addLast(now)
+                    lastSwingSign = sign
+                }
+            }
+
+            if (!shakeReported &&
+                shakeSwingTimes.size >= SHAKE_REQUIRED_SWINGS &&
+                recentMaxHorizontal >= recentMaxVertical * 0.8
+            ) {
+                shakeReported = true
+                shakeDetections++
+                shakeSwingTimes.clear()
+                lastSwingSign = 0
+                detected = true
+            }
         }
 
-        synchronized(verticalBuffer) {
-            verticalBuffer.add(smoothVertical)
-            if (verticalBuffer.size > 100) verticalBuffer.removeAt(0)
+        if (detected) {
+            Log.d(TAG, "Head shake detected (threshold $shakeThreshold)")
+            mainHandler.post {
+                if (!isRunning || !isContinuous) return@post
+                val callback = gestureDetectedCallback
+                stopDetection(doNotStop = true)
+                callback?.invoke(false)
+            }
         }
-
-        detectPeaksAndTroughs()
     }
 
     private fun applySmoothing(newValue: Double, buffer: MutableList<Double>): Double {
@@ -414,7 +510,6 @@ fun startDetection(
     }
 
     private fun getRequiredExtremes(): Int {
-        if (isContinuous) return MAX_REQUIRED_EXTREMES
         if (movementSpeedIntervals.isEmpty()) return MIN_REQUIRED_EXTREMES
 
         val avgInterval = movementSpeedIntervals.average()
@@ -429,21 +524,9 @@ fun startDetection(
 
     private fun detectGestures(): Boolean? {
         val requiredExtremes = getRequiredExtremes()
-        if (isContinuous) {
-            val cutoff = System.currentTimeMillis() - CONTINUOUS_WINDOW_MS
-            val extremeLists = listOf(horizontalPeaks, horizontalTroughs, verticalPeaks, verticalTroughs)
-            extremeLists.forEach { extremes -> extremes.removeIf { it.third < cutoff } }
-            if (extremeLists.all { it.isEmpty() } && lastPeakTime != 0L) {
-                // Head has been still: the next shake's rhythm should not include old pauses.
-                lastPeakTime = 0
-                peakIntervals.clear()
-                movementSpeedIntervals.clear()
-            }
-        } else {
-            Log.d(TAG, "Current required extremes: $requiredExtremes")
-        }
+        Log.d(TAG, "Current required extremes: $requiredExtremes")
 
-        if (!isContinuous && verticalPeaks.size + verticalTroughs.size >= requiredExtremes) {
+        if (verticalPeaks.size + verticalTroughs.size >= requiredExtremes) {
             val allExtremes = (verticalPeaks + verticalTroughs).sortedBy { it.third }
 
             val confidence = calculateConfidenceScore(allExtremes, isVertical = true)

@@ -23,6 +23,9 @@
 
 package me.kavishdevar.librepods.presentation.screens
 
+import androidx.compose.material3.Slider
+import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.utils.GestureDetector
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.edit
@@ -185,6 +188,31 @@ fun HeadTrackingScreen(viewModel: AirPodsViewModel, navigateToPurchase: () -> Un
                 enabled = state.isPremium || headShakeNoiseControl,
                 description = stringResource(R.string.head_shake_noise_control_description)
             )
+
+            if (headShakeNoiseControl) {
+                var shakeThreshold by remember {
+                    mutableStateOf(
+                        settings.getInt("head_shake_threshold", GestureDetector.DEFAULT_SHAKE_THRESHOLD).toFloat()
+                    )
+                }
+                Text(
+                    stringResource(R.string.head_shake_sensitivity_value, shakeThreshold.toInt()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = textColor.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                )
+                Slider(
+                    value = shakeThreshold,
+                    onValueChange = { shakeThreshold = it },
+                    onValueChangeFinished = {
+                        settings.edit { putInt("head_shake_threshold", shakeThreshold.toInt()) }
+                    },
+                    valueRange = 100f..1500f,
+                    steps = 27,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+                HeadShakeStatusLine(textColor)
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -421,4 +449,45 @@ private fun Plot() {
             }
         }
     }
+}
+
+/** Live status of shake-to-change-noise-control, refreshed twice a second. */
+@Composable
+private fun HeadShakeStatusLine(textColor: Color) {
+    var status by remember { mutableStateOf<AirPodsService.HeadShakeStatus?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            status = ServiceManager.getService()?.headShakeStatus()
+            delay(500)
+        }
+    }
+
+    val current = status
+    val diagnostics = current?.diagnostics
+    val text = if (current == null) {
+        stringResource(R.string.head_shake_status_starting)
+    } else if (!current.connected) {
+        stringResource(R.string.head_shake_status_not_connected)
+    } else if (current.inCall) {
+        stringResource(R.string.head_shake_status_in_call)
+    } else if (diagnostics == null || !diagnostics.running) {
+        stringResource(R.string.head_shake_status_starting)
+    } else {
+        stringResource(
+            R.string.head_shake_status_running,
+            current.headTrackingPackets,
+            diagnostics.recentMaxHorizontal,
+            diagnostics.recentMaxVertical,
+            diagnostics.swings,
+            GestureDetector.SHAKE_REQUIRED_SWINGS,
+            diagnostics.detections
+        )
+    }
+
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = textColor.copy(alpha = 0.7f),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+    )
 }
