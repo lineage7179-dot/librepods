@@ -240,6 +240,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         init {
             System.loadLibrary("bluetooth_socket")
         }
+
+        private const val HEAD_SHAKE_WATCHDOG_MS = 10_000L
+        private const val HEAD_SHAKE_COOLDOWN_MS = 1_500L
     }
 
     private val bleStatusListener = object : BLEManager.AirPodsStatusListener {
@@ -422,6 +425,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
         ServiceManager.setService(this)
         startForegroundNotification()
+        headShakeHandler.postDelayed(headShakeWatchdog, HEAD_SHAKE_WATCHDOG_MS)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             initGestureDetector()
         } else {
@@ -621,11 +625,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             takeOver("call")
                         }
                         isInCall = true
+                        stopHeadShakeNoiseControl()
                     }
 
                     TelephonyManager.CALL_STATE_IDLE -> {
                         isInCall = false
                         gestureDetector?.stopDetection()
+                        headShakeHandler.postDelayed({ refreshHeadShakeNoiseControl() }, 2_000L)
                     }
                 }
             }
@@ -700,6 +706,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     BluetoothConnectionManager.aacpSocket = null
                     BluetoothConnectionManager.attSocket = null
                     updateNotificationContent(false)
+                    stopHeadShakeNoiseControl()
                 }
             }
         }
@@ -1512,6 +1519,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 preferences.getBoolean(key, true)
 
             "head_gestures" -> config.headGestures = preferences.getBoolean(key, true)
+            "head_shake_noise_control" -> refreshHeadShakeNoiseControl()
             "disconnect_when_not_wearing" -> config.disconnectWhenNotWearing =
                 preferences.getBoolean(key, false)
 
@@ -2146,6 +2154,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     fun handleIncomingCall() {
         if (isInCall) return
         if (config.headGestures) {
+            if (gestureDetector?.isContinuous == true) gestureDetector?.stopDetection(doNotStop = true)
             initGestureDetector()
             startHeadTracking()
             gestureDetector?.startDetection { accepted ->
@@ -2163,6 +2172,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun testHeadGestures(): Boolean {
+        if (gestureDetector?.isContinuous == true) gestureDetector?.stopDetection(doNotStop = true)
         return suspendCancellableCoroutine { continuation ->
             gestureDetector?.startDetection(doNotStop = true) { accepted ->
                 if (continuation.isActive) {
@@ -3141,6 +3151,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
+        headShakeHandler.removeCallbacksAndMessages(null)
         clearPacketLogs()
         Log.d(TAG, "Service stopped is being destroyed for some reason!")
 
@@ -3181,11 +3192,64 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     var isHeadTrackingActive = false
 
-    fun startHeadTracking() {
+    // Shake your head to change the noise control mode ("head_shake_noise_control" setting).
+    // Runs continuous, silent gesture detection while AirPods are connected and worn, outside
+    // calls. A watchdog restarts it after anything else (call gestures, the head tracking
+    // screen, connection setup) has stopped head tracking.
+    private val headShakeHandler = Handler(Looper.getMainLooper())
+    private var headShakeStartedTracking = false
+    private val headShakeWatchdog = object : Runnable {
+        override fun run() {
+            refreshHeadShakeNoiseControl()
+            headShakeHandler.postDelayed(this, HEAD_SHAKE_WATCHDOG_MS)
+        }
+    }
+
+    private fun isHeadShakeNoiseControlWanted(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            sharedPreferences.getBoolean("head_shake_noise_control", false) &&
+            BluetoothConnectionManager.aacpSocket?.isConnected == true &&
+            !isInCall &&
+            earDetectionNotification.status.any { it == 0x00.toByte() }
+
+    fun refreshHeadShakeNoiseControl() {
+        if (isHeadShakeNoiseControlWanted()) startHeadShakeNoiseControl() else stopHeadShakeNoiseControl()
+    }
+
+    private fun startHeadShakeNoiseControl() {
+        initGestureDetector()
+        val detector = gestureDetector ?: return
+        if (detector.isDetecting) return // call gestures or a running session have priority
+        if (!isHeadTrackingActive) {
+            // Never take the AirPods over from another device just for this.
+            startHeadTracking(allowTakeOver = false)
+            headShakeStartedTracking = true
+        }
+        detector.startDetection(doNotStop = true, continuous = true) { nodded ->
+            if (!nodded) {
+                Log.d(TAG, "Head shake detected, cycling noise control mode")
+                sendBroadcast(Intent("me.kavishdevar.librepods.SET_ANC_MODE").apply {
+                    setPackage(packageName)
+                })
+            }
+            headShakeHandler.postDelayed({ refreshHeadShakeNoiseControl() }, HEAD_SHAKE_COOLDOWN_MS)
+        }
+    }
+
+    private fun stopHeadShakeNoiseControl() {
+        val detector = gestureDetector
+        if (detector?.isContinuous == true) detector.stopDetection(doNotStop = true)
+        if (headShakeStartedTracking) {
+            headShakeStartedTracking = false
+            if (isHeadTrackingActive && detector?.isDetecting != true) stopHeadTracking()
+        }
+    }
+
+    fun startHeadTracking(allowTakeOver: Boolean = true) {
         isHeadTrackingActive = true
         val useAlternatePackets =
             sharedPreferences.getBoolean("use_alternate_head_tracking_packets", true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && aacpManager.getControlCommandStatus(
+        if (allowTakeOver && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && aacpManager.getControlCommandStatus(
                 AACPManager.Companion.ControlCommandIdentifiers.OWNS_CONNECTION
             )?.value?.get(0)?.toInt() != 1
         ) {

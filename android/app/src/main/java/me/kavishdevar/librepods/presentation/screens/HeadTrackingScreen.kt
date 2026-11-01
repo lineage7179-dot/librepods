@@ -23,6 +23,9 @@
 
 package me.kavishdevar.librepods.presentation.screens
 
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.edit
 import android.graphics.Paint
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
@@ -165,6 +168,22 @@ fun HeadTrackingScreen(viewModel: AirPodsViewModel, navigateToPurchase: () -> Un
                 enabled = state.isPremium || state.headGesturesEnabled,
                 description = stringResource(R.string.head_gestures_details),
                 header = true
+            )
+
+            val context = LocalContext.current
+            val settings = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+            var headShakeNoiseControl by remember {
+                mutableStateOf(settings.getBoolean("head_shake_noise_control", false))
+            }
+            StyledToggle(
+                label = stringResource(R.string.head_shake_noise_control),
+                checked = headShakeNoiseControl,
+                onCheckedChange = { checked ->
+                    headShakeNoiseControl = checked
+                    settings.edit { putBoolean("head_shake_noise_control", checked) }
+                },
+                enabled = state.isPremium || headShakeNoiseControl,
+                description = stringResource(R.string.head_shake_noise_control_description)
             )
 
             Spacer(modifier = Modifier.height(16.dp))

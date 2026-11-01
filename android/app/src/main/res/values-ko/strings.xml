@@ -308,4 +308,6 @@
     <string name="notification_channel_airpods_connection">AirPods 연결 상태</string>
     <string name="background_service_notification_title">LibrePods 백그라운드 실행 중</string>
     <string name="background_service_notification_text">눌러서 이 알림을 끄세요. AirPods가 연결되면 연결 알림은 그대로 표시됩니다.</string>
+    <string name="head_shake_noise_control">고개 저어 소음 제어 전환</string>
+    <string name="head_shake_noise_control_description">AirPods를 낀 상태에서 고개를 좌우로 두세 번 저으면 다음 소음 제어 모드로 바뀝니다(길게 누르기에서 고른 모드 순서). 통화 중에는 동작하지 않고, 배터리를 조금 더 씁니다.</string>
 </resources>

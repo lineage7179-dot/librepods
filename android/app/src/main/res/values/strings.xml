@@ -318,4 +318,6 @@
     <string name="notification_channel_airpods_connection">AirPods connection</string>
     <string name="background_service_notification_title">LibrePods is running in the background</string>
     <string name="background_service_notification_text">Tap to turn this notification off. The AirPods notification still shows while they are connected.</string>
+    <string name="head_shake_noise_control">Shake Head to Change Noise Control</string>
+    <string name="head_shake_noise_control_description">While wearing your AirPods, shake your head side to side two or three times to switch to the next listening mode (the modes chosen for press and hold). Off during calls. Uses a little more battery.</string>
 </resources>
