@@ -214,10 +214,10 @@ class AACPManager {
     private fun setControlCommandStatusValue(
         identifier: ControlCommandIdentifiers, value: ByteArray
     ) {
-        val existingStatus = getControlCommandStatus(identifier)
-        if (existingStatus?.value.contentEquals(value)) {
-            controlCommandStatusList.remove(existingStatus)
-        }
+        // Keep exactly one entry per identifier. Previously an entry was only replaced when the
+        // new value was equal, so changed values piled up and getControlCommandStatus() (find)
+        // kept returning the oldest one.
+        controlCommandStatusList.removeAll { it.identifier == identifier }
         controlCommandListeners[identifier]?.forEach { listener ->
             listener.onControlCommandReceived(ControlCommand(identifier.value, value))
         }
