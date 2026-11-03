@@ -328,4 +328,6 @@
     <string name="head_shake_status_not_wearing">Waiting: AirPods are not in your ears</string>
     <string name="head_shake_toast_transparency">Head shake: Transparency</string>
     <string name="head_shake_toast_noise_cancellation">Head shake: Noise Cancellation</string>
+    <string name="notification_action_to_transparency">Switch to Transparency</string>
+    <string name="notification_action_to_noise_cancellation">Switch to Noise Cancellation</string>
 </resources>

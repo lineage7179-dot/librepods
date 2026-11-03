@@ -176,8 +176,9 @@ class AACPManager {
         )
     }
 
+    // Read from the Bluetooth reader thread and written from the main thread.
     var controlCommandStatusList: MutableList<ControlCommandStatus> =
-        mutableListOf<ControlCommandStatus>()
+        java.util.concurrent.CopyOnWriteArrayList<ControlCommandStatus>()
     var controlCommandListeners: MutableMap<ControlCommandIdentifiers, MutableList<ControlCommandListener>> =
         mutableMapOf()
 
@@ -217,7 +218,7 @@ class AACPManager {
         // Keep exactly one entry per identifier. Previously an entry was only replaced when the
         // new value was equal, so changed values piled up and getControlCommandStatus() (find)
         // kept returning the oldest one.
-        controlCommandStatusList.removeAll { it.identifier == identifier }
+        controlCommandStatusList.removeIf { it.identifier == identifier }
         controlCommandListeners[identifier]?.forEach { listener ->
             listener.onControlCommandReceived(ControlCommand(identifier.value, value))
         }

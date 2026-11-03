@@ -242,6 +242,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             System.loadLibrary("bluetooth_socket")
         }
 
+        private const val ACTION_TOGGLE_TRANSPARENCY_NOISE_CANCELLATION =
+            "me.kavishdevar.librepods.TOGGLE_TRANSPARENCY_NOISE_CANCELLATION"
+
         private const val HEAD_SHAKE_WATCHDOG_MS = 5_000L
         private const val HEAD_SHAKE_COOLDOWN_MS = 2_000L
 
@@ -2106,10 +2109,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         )
 
         if (BluetoothConnectionManager.aacpSocket?.isConnected == true) {
-            val updatedNotificationBuilder =
-                NotificationCompat.Builder(this, "airpods_connection_status")
-                    .setSmallIcon(R.drawable.airpods)
-                    .setContentTitle(airpodsName ?: config.deviceName).setContentText(
+            val batteryText =
                         """${
                         batteryList?.find { it.component == BatteryComponent.LEFT }?.let {
                             if (it.status != BatteryStatus.DISCONNECTED) {
@@ -2134,8 +2134,33 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                                 ""
                             }
                         } ?: ""
-                    }""").setContentIntent(pendingIntent).setCategory(Notification.CATEGORY_STATUS)
+                    }"""
+            val listeningMode = currentListeningMode()
+            val contentText = listOf(
+                batteryText.replace(Regex("\\s+"), " ").trim(),
+                listeningModeName(listeningMode).orEmpty()
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
+
+            val updatedNotificationBuilder =
+                NotificationCompat.Builder(this, "airpods_connection_status")
+                    .setSmallIcon(R.drawable.airpods)
+                    .setContentTitle(airpodsName ?: config.deviceName).setContentText(contentText)
+                    .setContentIntent(pendingIntent).setCategory(Notification.CATEGORY_STATUS)
                     .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true)
+
+            // One button: Noise Cancellation <-> Transparency (from Off/Adaptive: Transparency).
+            updatedNotificationBuilder.addAction(
+                R.drawable.airpods,
+                getString(
+                    if (listeningMode == 3) R.string.notification_action_to_noise_cancellation
+                    else R.string.notification_action_to_transparency
+                ),
+                PendingIntent.getService(
+                    this, 1, Intent(this, AirPodsService::class.java).apply {
+                        action = ACTION_TOGGLE_TRANSPARENCY_NOISE_CANCELLATION
+                    }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
 
             if (disconnectedBecauseReversed) {
                 updatedNotificationBuilder.addAction(
@@ -2495,6 +2520,17 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     @SuppressLint("InlinedApi", "MissingPermission", "UnspecifiedRegisterReceiverFlag")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service started with intent action: ${intent?.action}")
+
+        if (intent?.action == ACTION_TOGGLE_TRANSPARENCY_NOISE_CANCELLATION &&
+            BluetoothConnectionManager.aacpSocket?.isConnected == true
+        ) {
+            toggleTransparencyAndNoiseCancellation()
+            updateNotificationContent(
+                true,
+                sharedPreferences.getString("name", device?.name),
+                batteryNotification.getBattery()
+            )
+        }
 
         if (intent?.action == "me.kavishdevar.librepods.RECONNECT_AFTER_REVERSE") {
             Log.d(TAG, "reconnect after reversed received, taking over")
@@ -3292,29 +3328,46 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             headShakeStartedTracking = true
         }
         detector.startDetection(doNotStop = true, continuous = true) { nodded ->
-            if (!nodded) toggleTransparencyAndNoiseCancellation()
+            if (!nodded) {
+                val target = toggleTransparencyAndNoiseCancellation()
+                sendToast(
+                    getString(
+                        if (target == 3) R.string.head_shake_toast_transparency
+                        else R.string.head_shake_toast_noise_cancellation
+                    )
+                )
+            }
             headShakeHandler.postDelayed({ refreshHeadShakeNoiseControl() }, HEAD_SHAKE_COOLDOWN_MS)
         }
     }
 
-    /** Head shake: Transparency <-> Noise Cancellation (from Off or Adaptive: Transparency). */
-    private fun toggleTransparencyAndNoiseCancellation() {
-        val current = aacpManager.getControlCommandStatus(
+    /** Listening mode values: 1 Off, 2 Noise Cancellation, 3 Transparency, 4 Adaptive. */
+    private fun currentListeningMode(): Int =
+        aacpManager.getControlCommandStatus(
             AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE
         )?.value?.firstOrNull()?.toInt() ?: ancNotification.status
-        // Listening mode values: 1 Off, 2 Noise Cancellation, 3 Transparency, 4 Adaptive.
+
+    private fun listeningModeName(mode: Int): String? = when (mode) {
+        1 -> getString(R.string.off)
+        2 -> getString(R.string.noise_cancellation)
+        3 -> getString(R.string.transparency)
+        4 -> getString(R.string.adaptive)
+        else -> null
+    }
+
+    /**
+     * Transparency <-> Noise Cancellation (from Off or Adaptive: Transparency), used by the
+     * head shake and the notification button. Returns the mode that was sent.
+     */
+    private fun toggleTransparencyAndNoiseCancellation(): Int {
+        val current = currentListeningMode()
         val target = if (current == 3) 2 else 3
-        Log.d(TAG, "Head shake detected: listening mode $current -> $target")
+        Log.d(TAG, "Toggling listening mode $current -> $target")
         aacpManager.sendControlCommand(
             AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
             target
         )
-        sendToast(
-            getString(
-                if (target == 3) R.string.head_shake_toast_transparency
-                else R.string.head_shake_toast_noise_cancellation
-            )
-        )
+        return target
     }
 
     private fun stopHeadShakeNoiseControl() {
