@@ -52,6 +52,12 @@ android {
         targetSdk = 37
         versionCode = appVersionCode
         versionName = appVersionName
+        // Label of a custom (fork) build, set by .github/workflows/custom-apk.yml and shown on
+        // the app info card. Empty for ordinary builds. VERSION_NAME stays untouched because
+        // the release-notes screen is keyed on it.
+        val customBuildLabel = providers.environmentVariable("CUSTOM_BUILD_LABEL").getOrElse("")
+            .replace("\\", "").replace("\"", "")
+        buildConfigField("String", "CUSTOM_BUILD", "\"$customBuildLabel\"")
     }
     buildTypes {
         release {

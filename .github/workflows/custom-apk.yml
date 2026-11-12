@@ -69,6 +69,8 @@ jobs:
         working-directory: android
         run: |
           set -o pipefail
+          # Shown in the app (Settings > About > Custom build); matches the release tag.
+          export CUSTOM_BUILD_LABEL="$(git rev-parse --short HEAD) ($(TZ=Asia/Seoul date +%Y-%m-%d))"
           ./gradlew assembleFossRelease --stacktrace 2>&1 | tee ../build.log
 
       - name: Name the APK

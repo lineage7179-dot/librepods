@@ -35,7 +35,6 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import me.kavishdevar.librepods.QuickSettingsDialogActivity
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.bluetooth.BluetoothConnectionManager
 import me.kavishdevar.librepods.data.AirPodsNotifications
 import me.kavishdevar.librepods.data.NoiseControlMode
@@ -193,12 +192,11 @@ class AirPodsQSService : TileService() {
             Log.d("AirPodsQSService", "Tile clicked (cycle mode) but service is null.")
             return
         }
-        val nextMode = getNextAncMode()
-        Log.d("AirPodsQSService", "Cycling ANC mode to: $nextMode")
-        service.aacpManager.sendControlCommand(
-            AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
-            nextMode
-        )
+        // One tap switches Transparency <-> Noise Cancellation (from Off or Adaptive:
+        // Transparency), the same rule as the notification button and the head shake.
+        currentAncMode = service.toggleTransparencyAndNoiseCancellation()
+        Log.d("AirPodsQSService", "Toggled ANC mode to: $currentAncMode")
+        updateTile()
     }
 
     private fun updateTile() {
@@ -208,14 +206,18 @@ class AirPodsQSService : TileService() {
         val deviceName = sharedPreferences.getString("name", "AirPods") ?: "AirPods"
 
         if (isAirPodsConnected) {
-            tile.state = Tile.STATE_ACTIVE
+            // Lit while noise is being reduced, unlit in Transparency or Off, so the mode can
+            // be read from the icon alone.
+            val noiseReduced = currentAncMode == NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 ||
+                currentAncMode == NoiseControlMode.ADAPTIVE.ordinal + 1
+            tile.state = if (noiseReduced) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             tile.label = getModeLabel(currentAncMode)
             tile.subtitle = deviceName
             tile.icon = Icon.createWithResource(this, getModeIcon(currentAncMode))
         } else {
             tile.state = Tile.STATE_UNAVAILABLE
             tile.label = "AirPods"
-            tile.subtitle = "Disconnected"
+            tile.subtitle = getString(R.string.qs_tile_not_connected)
             tile.icon = Icon.createWithResource(this, R.drawable.airpods)
         }
 
@@ -231,34 +233,13 @@ class AirPodsQSService : TileService() {
         return sharedPreferences.getBoolean("off_listening_mode", true)
     }
 
-    private fun getAvailableModes(): List<Int> {
-        val modes = mutableListOf(
-            NoiseControlMode.TRANSPARENCY.ordinal + 1,
-            NoiseControlMode.ADAPTIVE.ordinal + 1,
-            NoiseControlMode.NOISE_CANCELLATION.ordinal + 1
-        )
-        if (isOffModeEnabled()) {
-            modes.add(0, NoiseControlMode.OFF.ordinal + 1)
-        }
-        return modes
-    }
-
-    private fun getNextAncMode(): Int {
-        val availableModes = getAvailableModes()
-        Log.d("AirPodsQSService", "availableModes: $availableModes, currentAncMode: $currentAncMode")
-        val currentIndex = availableModes.indexOf(currentAncMode)
-        val nextIndex = (currentIndex + 1) % availableModes.size
-        Log.d("AirPodsQSService", "nextIndex: $nextIndex")
-        return availableModes[nextIndex]
-    }
-
     private fun getModeLabel(mode: Int): String {
         return when (mode) {
-            NoiseControlMode.OFF.ordinal + 1 -> "Off"
-            NoiseControlMode.TRANSPARENCY.ordinal + 1 -> "Transparency"
-            NoiseControlMode.ADAPTIVE.ordinal + 1 -> "Adaptive"
-            NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 -> "Noise Cancellation"
-            else -> "Unknown"
+            NoiseControlMode.OFF.ordinal + 1 -> getString(R.string.off)
+            NoiseControlMode.TRANSPARENCY.ordinal + 1 -> getString(R.string.transparency)
+            NoiseControlMode.ADAPTIVE.ordinal + 1 -> getString(R.string.adaptive)
+            NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 -> getString(R.string.noise_cancellation)
+            else -> "AirPods"
         }
     }
 

@@ -320,4 +320,7 @@
     <string name="head_shake_toast_noise_cancellation">고개 저음: 노이즈 캔슬링</string>
     <string name="notification_action_to_transparency">주변음 허용으로 전환</string>
     <string name="notification_action_to_noise_cancellation">노이즈 캔슬링으로 전환</string>
+    <string name="qs_tile_label">AirPods 소음 제어</string>
+    <string name="qs_tile_not_connected">연결 안 됨</string>
+    <string name="custom_build">수정본</string>
 </resources>

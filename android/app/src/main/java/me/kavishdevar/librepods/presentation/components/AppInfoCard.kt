@@ -34,6 +34,13 @@ fun AppInfoCard(
             onClick = navigateToReleaseNotesScreen
         )
 
+        if (BuildConfig.CUSTOM_BUILD.isNotEmpty()) {
+            StyledListItem(
+                name = stringResource(R.string.custom_build),
+                description = BuildConfig.CUSTOM_BUILD,
+            )
+        }
+
         StyledListItem(
             name = stringResource(R.string.version_code),
             description = BuildConfig.VERSION_CODE.toString(),
