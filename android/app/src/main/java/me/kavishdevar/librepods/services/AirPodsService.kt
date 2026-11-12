@@ -244,6 +244,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
         private const val ACTION_TOGGLE_TRANSPARENCY_NOISE_CANCELLATION =
             "me.kavishdevar.librepods.TOGGLE_TRANSPARENCY_NOISE_CANCELLATION"
+        private const val ACTION_CONNECTED_NOTIFICATION_DISMISSED =
+            "me.kavishdevar.librepods.CONNECTED_NOTIFICATION_DISMISSED"
+
+        private val WHITESPACE = Regex("\\s+")
 
         private const val HEAD_SHAKE_WATCHDOG_MS = 5_000L
         private const val HEAD_SHAKE_COOLDOWN_MS = 2_000L
@@ -2094,22 +2098,27 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         appWidgetManager.updateAppWidget(widgetIds, remoteViews)
     }
 
+    private val connectedNotificationLock = Any()
+    private var lastConnectedNotificationKey: String? = null
+
+    /**
+     * Shows or removes the "AirPods connected" notification (id 2).
+     *
+     * It is an ordinary notification, not the foreground-service one (id 1): One UI files
+     * foreground-service notifications under "background activity" and moves them to the
+     * bottom of the panel. It is only posted when something visible changed, because this is
+     * called for incoming packets, and calls are serialized because they come from the
+     * Bluetooth reader thread as well as the main thread.
+     */
     @OptIn(ExperimentalMaterial3Api::class)
     fun updateNotificationContent(
         connected: Boolean, airpodsName: String? = null, batteryList: List<Battery>? = null
     ) {
         val notificationManager = getSystemService(NotificationManager::class.java)
 
-        val notificationIntent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            notificationIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        if (BluetoothConnectionManager.aacpSocket?.isConnected == true) {
-            val batteryText =
+        synchronized(connectedNotificationLock) {
+            if (BluetoothConnectionManager.aacpSocket?.isConnected == true) {
+                val batteryText =
                         """${
                         batteryList?.find { it.component == BatteryComponent.LEFT }?.let {
                             if (it.status != BatteryStatus.DISCONNECTED) {
@@ -2135,57 +2144,86 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             }
                         } ?: ""
                     }"""
-            val listeningMode = currentListeningMode()
-            val contentText = listOf(
-                batteryText.replace(Regex("\\s+"), " ").trim(),
-                listeningModeName(listeningMode).orEmpty()
-            ).filter { it.isNotEmpty() }.joinToString(" · ")
+                val listeningMode = currentListeningMode()
+                val title = airpodsName ?: config.deviceName
+                val contentText = listOf(
+                    batteryText.replace(WHITESPACE, " ").trim(),
+                    listeningModeName(listeningMode).orEmpty()
+                ).filter { it.isNotEmpty() }.joinToString(" · ")
+                val switchesToNoiseCancellation = listeningMode == 3
+                val showReconnect = disconnectedBecauseReversed
 
-            val updatedNotificationBuilder =
-                NotificationCompat.Builder(this, "airpods_connection_status")
-                    .setSmallIcon(R.drawable.airpods)
-                    .setContentTitle(airpodsName ?: config.deviceName).setContentText(contentText)
-                    .setContentIntent(pendingIntent).setCategory(Notification.CATEGORY_STATUS)
-                    .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true)
+                val key = "$title\n$contentText\n$switchesToNoiseCancellation\n$showReconnect"
+                if (key == lastConnectedNotificationKey) return
 
-            // One button: Noise Cancellation <-> Transparency (from Off/Adaptive: Transparency).
-            updatedNotificationBuilder.addAction(
-                R.drawable.airpods,
-                getString(
-                    if (listeningMode == 3) R.string.notification_action_to_noise_cancellation
-                    else R.string.notification_action_to_transparency
-                ),
-                PendingIntent.getService(
-                    this, 1, Intent(this, AirPodsService::class.java).apply {
-                        action = ACTION_TOGGLE_TRANSPARENCY_NOISE_CANCELLATION
-                    }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                val pendingIntent = PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
-            )
 
-            if (disconnectedBecauseReversed) {
+                val updatedNotificationBuilder =
+                    NotificationCompat.Builder(this, "airpods_connection_status")
+                        .setSmallIcon(R.drawable.airpods)
+                        .setContentTitle(title).setContentText(contentText)
+                        .setContentIntent(pendingIntent).setCategory(Notification.CATEGORY_STATUS)
+                        .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true)
+                        // Swiped away while still connected: put it back (see onStartCommand).
+                        .setDeleteIntent(
+                            PendingIntent.getService(
+                                this, 2, Intent(this, AirPodsService::class.java).apply {
+                                    action = ACTION_CONNECTED_NOTIFICATION_DISMISSED
+                                }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                            )
+                        )
+
+                // One button: Noise Cancellation <-> Transparency (from Off/Adaptive: Transparency).
                 updatedNotificationBuilder.addAction(
-                    R.drawable.ic_bluetooth, "Reconnect", PendingIntent.getService(
-                        this, 0, Intent(this, AirPodsService::class.java).apply {
-                            action = "me.kavishdevar.librepods.RECONNECT_AFTER_REVERSE"
+                    R.drawable.airpods,
+                    getString(
+                        if (switchesToNoiseCancellation) R.string.notification_action_to_noise_cancellation
+                        else R.string.notification_action_to_transparency
+                    ),
+                    PendingIntent.getService(
+                        this, 1, Intent(this, AirPodsService::class.java).apply {
+                            action = ACTION_TOGGLE_TRANSPARENCY_NOISE_CANCELLATION
                         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
                 )
+
+                if (showReconnect) {
+                    updatedNotificationBuilder.addAction(
+                        R.drawable.ic_bluetooth, "Reconnect", PendingIntent.getService(
+                            this, 0, Intent(this, AirPodsService::class.java).apply {
+                                action = "me.kavishdevar.librepods.RECONNECT_AFTER_REVERSE"
+                            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                    )
+                }
+
+                notificationManager.notify(2, updatedNotificationBuilder.build())
+                lastConnectedNotificationKey = key
+            } else if (!connected) {
+                // Not connected (or the socket is already gone). The foreground-service slot
+                // keeps its background notice, which stays hidden once its category is off.
+                lastConnectedNotificationKey = null
+                notificationManager.cancel(2)
+            } else if (BluetoothConnectionManager.aacpSocket != null && !config.bleOnlyMode) {
+                showSocketConnectionFailureNotification("BluetoothConnectionManager.aacpSocket? created, but not connected. Check logs")
             }
-
-            val updatedNotification = updatedNotificationBuilder.build()
-
-            // Show the connection status in the foreground-service slot itself, so only one
-            // LibrePods notification is visible while connected.
-            notificationManager.notify(1, updatedNotification)
-            notificationManager.cancel(2)
-        } else if (!connected) {
-            // Not connected (or the socket is already gone): back to the background notice,
-            // which stays hidden once its category is turned off.
-            notificationManager.notify(1, buildBackgroundServiceNotification())
-            notificationManager.cancel(2)
-        } else if (BluetoothConnectionManager.aacpSocket != null && !config.bleOnlyMode) {
-            showSocketConnectionFailureNotification("BluetoothConnectionManager.aacpSocket? created, but not connected. Check logs")
         }
+    }
+
+    /** Re-posts the connected notification with the current name, battery and mode. */
+    private fun refreshConnectedNotification(force: Boolean = false) {
+        if (BluetoothConnectionManager.aacpSocket?.isConnected != true) return
+        if (force) synchronized(connectedNotificationLock) { lastConnectedNotificationKey = null }
+        updateNotificationContent(
+            true,
+            sharedPreferences.getString("name", device?.name),
+            batteryNotification.getBattery()
+        )
     }
 
     fun handleIncomingCall() {
@@ -2525,11 +2563,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             BluetoothConnectionManager.aacpSocket?.isConnected == true
         ) {
             toggleTransparencyAndNoiseCancellation()
-            updateNotificationContent(
-                true,
-                sharedPreferences.getString("name", device?.name),
-                batteryNotification.getBattery()
-            )
+        }
+
+        if (intent?.action == ACTION_CONNECTED_NOTIFICATION_DISMISSED) {
+            refreshConnectedNotification(force = true)
         }
 
         if (intent?.action == "me.kavishdevar.librepods.RECONNECT_AFTER_REVERSE") {
@@ -2873,22 +2910,28 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             var data: ByteArray
                             if (bytesRead > 0) {
                                 data = buffer.copyOfRange(0, bytesRead)
-                                sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DATA).apply {
-                                    putExtra("data", buffer.copyOfRange(0, bytesRead))
-                                    setPackage(packageName)
-                                })
-                                val bytes = buffer.copyOfRange(0, bytesRead)
-                                val formattedHex = bytes.joinToString(" ") { "%02X".format(it) }
+                                // Head tracking packets arrive many times a second and never
+                                // change what the notification shows, so they only get parsed.
+                                val headTrackingPacket = isHeadTrackingData(data)
+                                if (!headTrackingPacket) {
+                                    sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DATA).apply {
+                                        putExtra("data", buffer.copyOfRange(0, bytesRead))
+                                        setPackage(packageName)
+                                    })
+                                }
 //                                    CrossDevice.sendReceivedPacket(bytes)
-                                updateNotificationContent(
-                                    true,
-                                    sharedPreferences.getString("name", device.name),
-                                    batteryNotification.getBattery()
-                                )
 
                                 aacpManager.receivePacket(data)
 
-                                if (!isHeadTrackingData(data)) {
+                                if (!headTrackingPacket) {
+                                    // After the packet is handled, so the notification shows
+                                    // the state it just changed (battery, listening mode).
+                                    updateNotificationContent(
+                                        true,
+                                        sharedPreferences.getString("name", device.name),
+                                        batteryNotification.getBattery()
+                                    )
+                                    val formattedHex = data.joinToString(" ") { "%02X".format(it) }
                                     Log.d("AirPodsData", "Data received: $formattedHex")
                                     logPacket(data, "AirPods")
                                 }
@@ -3357,9 +3400,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     /**
      * Transparency <-> Noise Cancellation (from Off or Adaptive: Transparency), used by the
-     * head shake and the notification button. Returns the mode that was sent.
+     * head shake, the notification button and the quick-settings tile. Returns the mode that
+     * was sent.
      */
-    private fun toggleTransparencyAndNoiseCancellation(): Int {
+    fun toggleTransparencyAndNoiseCancellation(): Int {
         val current = currentListeningMode()
         val target = if (current == 3) 2 else 3
         Log.d(TAG, "Toggling listening mode $current -> $target")
@@ -3367,6 +3411,12 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
             target
         )
+        // Show it right away in the quick-settings tile, widget and notification. If the
+        // AirPods end up in another mode, their reply corrects all three.
+        ancNotification.setStatus(byteArrayOf(target.toByte()))
+        sendANCBroadcast()
+        updateNoiseControlWidget()
+        refreshConnectedNotification()
         return target
     }
 
