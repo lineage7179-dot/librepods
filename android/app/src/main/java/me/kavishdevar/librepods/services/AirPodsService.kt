@@ -246,6 +246,17 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             "me.kavishdevar.librepods.TOGGLE_TRANSPARENCY_NOISE_CANCELLATION"
         private const val ACTION_CONNECTED_NOTIFICATION_DISMISSED =
             "me.kavishdevar.librepods.CONNECTED_NOTIFICATION_DISMISSED"
+        /** The notification switch was flipped; carries RemoteViews.EXTRA_CHECKED. */
+        private const val ACTION_SET_NOISE_CANCELLATION =
+            "me.kavishdevar.librepods.SET_NOISE_CANCELLATION"
+
+        /** The "AirPods connected" notification takes turns between these two ids. */
+        private const val CONNECTED_NOTIFICATION_ID = 2
+        private const val CONNECTED_NOTIFICATION_ALT_ID = 4
+
+        /** Listening mode values (1 Off and 4 Adaptive are the others). */
+        private const val LISTENING_MODE_NOISE_CANCELLATION = 2
+        private const val LISTENING_MODE_TRANSPARENCY = 3
 
         private val WHITESPACE = Regex("\\s+")
 
@@ -2100,15 +2111,25 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     private val connectedNotificationLock = Any()
     private var lastConnectedNotificationKey: String? = null
+    /** Id the connected notification is posted under; it changes with the listening mode. */
+    private var connectedNotificationId = CONNECTED_NOTIFICATION_ID
+    /** Listening mode the posted connected notification shows; null while none is posted. */
+    private var connectedNotificationMode: Int? = null
 
     /**
-     * Shows or removes the "AirPods connected" notification (id 2).
+     * Shows or removes the "AirPods connected" notification.
      *
      * It is an ordinary notification, not the foreground-service one (id 1): One UI files
      * foreground-service notifications under "background activity" and moves them to the
-     * bottom of the panel. It is only posted when something visible changed, because this is
-     * called for incoming packets, and calls are serialized because they come from the
-     * Bluetooth reader thread as well as the main thread.
+     * bottom of the panel. Its content is a custom layout with a Noise Cancellation switch
+     * (on: Noise Cancellation, off: Transparency) that shows without expanding it.
+     *
+     * A new listening mode is posted as a new notification under the other of two ids: One UI's
+     * notification filter moved this notification down into the collapsed "more notifications"
+     * group once its button had been used, and updating it in place kept it there. Other
+     * changes (battery) update it in place. It is only posted when something visible
+     * changed, because this is called for incoming packets, and calls are serialized because
+     * they come from the Bluetooth reader thread as well as the main thread.
      */
     @OptIn(ExperimentalMaterial3Api::class)
     fun updateNotificationContent(
@@ -2145,15 +2166,26 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         } ?: ""
                     }"""
                 val listeningMode = currentListeningMode()
+                val noiseCancellationOn = listeningMode == LISTENING_MODE_NOISE_CANCELLATION
                 val title = airpodsName ?: config.deviceName
-                val contentText = listOf(
-                    batteryText.replace(WHITESPACE, " ").trim(),
-                    listeningModeName(listeningMode).orEmpty()
+                val battery = batteryText.replace(WHITESPACE, " ").trim()
+                val modeName = listeningModeName(listeningMode).orEmpty()
+                // Plain title and text, for where the custom layout is not shown (lock screen
+                // with hidden content, watch, notification history).
+                val contentText =
+                    listOf(battery, modeName).filter { it.isNotEmpty() }.joinToString(" · ")
+                // Under "Noise Cancellation", next to the switch. Off normally means
+                // Transparency, so only Off and Adaptive are spelled out.
+                val switchText = listOf(
+                    modeName.takeIf {
+                        listeningMode != LISTENING_MODE_NOISE_CANCELLATION &&
+                            listeningMode != LISTENING_MODE_TRANSPARENCY
+                    }.orEmpty(),
+                    battery
                 ).filter { it.isNotEmpty() }.joinToString(" · ")
-                val switchesToNoiseCancellation = listeningMode == 3
                 val showReconnect = disconnectedBecauseReversed
 
-                val key = "$title\n$contentText\n$switchesToNoiseCancellation\n$showReconnect"
+                val key = "$title\n$listeningMode\n$contentText\n$showReconnect"
                 if (key == lastConnectedNotificationKey) return
 
                 val pendingIntent = PendingIntent.getActivity(
@@ -2163,10 +2195,35 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
+                val content = RemoteViews(packageName, R.layout.notification_connected).apply {
+                    setTextViewText(R.id.notification_connected_text, switchText)
+                    setViewVisibility(
+                        R.id.notification_connected_text,
+                        if (switchText.isEmpty()) View.GONE else View.VISIBLE
+                    )
+                    setCompoundButtonChecked(R.id.notification_connected_switch, noiseCancellationOn)
+                    setOnCheckedChangeResponse(
+                        R.id.notification_connected_switch,
+                        RemoteViews.RemoteResponse.fromPendingIntent(
+                            PendingIntent.getService(
+                                this@AirPodsService, 3,
+                                Intent(this@AirPodsService, AirPodsService::class.java).apply {
+                                    action = ACTION_SET_NOISE_CANCELLATION
+                                },
+                                // Mutable so that the system can add the new switch position
+                                // (EXTRA_CHECKED); explicit, so it only reaches this service.
+                                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                            )
+                        )
+                    )
+                }
+
                 val updatedNotificationBuilder =
                     NotificationCompat.Builder(this, "airpods_connection_status")
                         .setSmallIcon(R.drawable.airpods)
-                        .setContentTitle(title).setContentText(contentText)
+                        .setContentTitle(title).setContentText(contentText).setSubText(title)
+                        .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+                        .setCustomContentView(content)
                         .setContentIntent(pendingIntent).setCategory(Notification.CATEGORY_STATUS)
                         .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true)
                         // Swiped away while still connected: put it back (see onStartCommand).
@@ -2178,20 +2235,6 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             )
                         )
 
-                // One button: Noise Cancellation <-> Transparency (from Off/Adaptive: Transparency).
-                updatedNotificationBuilder.addAction(
-                    R.drawable.airpods,
-                    getString(
-                        if (switchesToNoiseCancellation) R.string.notification_action_to_noise_cancellation
-                        else R.string.notification_action_to_transparency
-                    ),
-                    PendingIntent.getService(
-                        this, 1, Intent(this, AirPodsService::class.java).apply {
-                            action = ACTION_TOGGLE_TRANSPARENCY_NOISE_CANCELLATION
-                        }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-                )
-
                 if (showReconnect) {
                     updatedNotificationBuilder.addAction(
                         R.drawable.ic_bluetooth, "Reconnect", PendingIntent.getService(
@@ -2202,18 +2245,31 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     )
                 }
 
-                notificationManager.notify(2, updatedNotificationBuilder.build())
+                val postedMode = connectedNotificationMode
+                if (postedMode != null && postedMode != listeningMode) {
+                    connectedNotificationId = otherConnectedNotificationId()
+                }
+                // The previous notification after a mode change, or one left by an earlier run.
+                notificationManager.cancel(otherConnectedNotificationId())
+                notificationManager.notify(connectedNotificationId, updatedNotificationBuilder.build())
+                connectedNotificationMode = listeningMode
                 lastConnectedNotificationKey = key
             } else if (!connected) {
                 // Not connected (or the socket is already gone). The foreground-service slot
                 // keeps its background notice, which stays hidden once its category is off.
                 lastConnectedNotificationKey = null
-                notificationManager.cancel(2)
+                connectedNotificationMode = null
+                notificationManager.cancel(CONNECTED_NOTIFICATION_ID)
+                notificationManager.cancel(CONNECTED_NOTIFICATION_ALT_ID)
             } else if (BluetoothConnectionManager.aacpSocket != null && !config.bleOnlyMode) {
                 showSocketConnectionFailureNotification("BluetoothConnectionManager.aacpSocket? created, but not connected. Check logs")
             }
         }
     }
+
+    private fun otherConnectedNotificationId(): Int =
+        if (connectedNotificationId == CONNECTED_NOTIFICATION_ID) CONNECTED_NOTIFICATION_ALT_ID
+        else CONNECTED_NOTIFICATION_ID
 
     /** Re-posts the connected notification with the current name, battery and mode. */
     private fun refreshConnectedNotification(force: Boolean = false) {
@@ -2563,6 +2619,25 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             BluetoothConnectionManager.aacpSocket?.isConnected == true
         ) {
             toggleTransparencyAndNoiseCancellation()
+        }
+
+        if (intent?.action == ACTION_SET_NOISE_CANCELLATION) {
+            if (BluetoothConnectionManager.aacpSocket?.isConnected == true) {
+                if (intent.hasExtra(RemoteViews.EXTRA_CHECKED)) {
+                    setListeningModeFromShortcut(
+                        if (intent.getBooleanExtra(RemoteViews.EXTRA_CHECKED, false)) {
+                            LISTENING_MODE_NOISE_CANCELLATION
+                        } else {
+                            LISTENING_MODE_TRANSPARENCY
+                        }
+                    )
+                } else {
+                    toggleTransparencyAndNoiseCancellation()
+                }
+            } else {
+                // Flipped on a notification left over from a lost connection: remove it.
+                updateNotificationContent(false)
+            }
         }
 
         if (intent?.action == ACTION_CONNECTED_NOTIFICATION_DISMISSED) {
@@ -3399,14 +3474,21 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     }
 
     /**
-     * Transparency <-> Noise Cancellation (from Off or Adaptive: Transparency), used by the
-     * head shake, the notification button and the quick-settings tile. Returns the mode that
-     * was sent.
+     * Noise Cancellation -> Transparency, anything else -> Noise Cancellation: the head shake
+     * and the quick-settings tile, like the notification switch (on = Noise Cancellation).
+     * Returns the mode that was sent.
      */
-    fun toggleTransparencyAndNoiseCancellation(): Int {
-        val current = currentListeningMode()
-        val target = if (current == 3) 2 else 3
-        Log.d(TAG, "Toggling listening mode $current -> $target")
+    fun toggleTransparencyAndNoiseCancellation(): Int = setListeningModeFromShortcut(
+        if (currentListeningMode() == LISTENING_MODE_NOISE_CANCELLATION) LISTENING_MODE_TRANSPARENCY
+        else LISTENING_MODE_NOISE_CANCELLATION
+    )
+
+    /**
+     * Sends a listening mode chosen with the notification switch, the quick-settings tile or a
+     * head shake. Returns [target].
+     */
+    private fun setListeningModeFromShortcut(target: Int): Int {
+        Log.d(TAG, "Listening mode ${currentListeningMode()} -> $target")
         aacpManager.sendControlCommand(
             AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
             target

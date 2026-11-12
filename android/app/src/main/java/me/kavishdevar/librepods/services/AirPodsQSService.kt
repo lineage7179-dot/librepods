@@ -192,8 +192,8 @@ class AirPodsQSService : TileService() {
             Log.d("AirPodsQSService", "Tile clicked (cycle mode) but service is null.")
             return
         }
-        // One tap switches Transparency <-> Noise Cancellation (from Off or Adaptive:
-        // Transparency), the same rule as the notification button and the head shake.
+        // One tap switches Noise Cancellation <-> Transparency (from Off or Adaptive: Noise
+        // Cancellation), the same rule as the notification switch and the head shake.
         currentAncMode = service.toggleTransparencyAndNoiseCancellation()
         Log.d("AirPodsQSService", "Toggled ANC mode to: $currentAncMode")
         updateTile()
@@ -206,11 +206,11 @@ class AirPodsQSService : TileService() {
         val deviceName = sharedPreferences.getString("name", "AirPods") ?: "AirPods"
 
         if (isAirPodsConnected) {
-            // Lit while noise is being reduced, unlit in Transparency or Off, so the mode can
-            // be read from the icon alone.
-            val noiseReduced = currentAncMode == NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 ||
-                currentAncMode == NoiseControlMode.ADAPTIVE.ordinal + 1
-            tile.state = if (noiseReduced) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            // Lit in Noise Cancellation only, like the notification switch: a tap on a lit tile
+            // goes to Transparency, on an unlit one to Noise Cancellation.
+            val noiseCancellation =
+                currentAncMode == NoiseControlMode.NOISE_CANCELLATION.ordinal + 1
+            tile.state = if (noiseCancellation) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             tile.label = getModeLabel(currentAncMode)
             tile.subtitle = deviceName
             tile.icon = Icon.createWithResource(this, getModeIcon(currentAncMode))

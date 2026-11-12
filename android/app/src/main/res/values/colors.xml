@@ -11,4 +11,10 @@
     <color name="light_blue_600">#FF039BE5</color>
     <color name="light_blue_900">#FF01579B</color>
     <color name="colorBackground">#FFFFFF</color>
+    <!-- Switch in the AirPods notification (layout/notification_connected.xml). On uses the
+         system accent color, so it matches the phone's color palette. -->
+    <color name="notification_switch_track_on">@android:color/system_accent1_600</color>
+    <color name="notification_switch_track_off">#FFB9B9BF</color>
+    <color name="notification_switch_thumb_on">#FFFFFFFF</color>
+    <color name="notification_switch_thumb_off">#FFFFFFFF</color>
 </resources>

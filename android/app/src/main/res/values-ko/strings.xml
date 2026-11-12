@@ -318,8 +318,7 @@
     <string name="head_shake_status_not_wearing">대기 중: AirPods를 끼고 있지 않음</string>
     <string name="head_shake_toast_transparency">고개 저음: 주변음 허용</string>
     <string name="head_shake_toast_noise_cancellation">고개 저음: 노이즈 캔슬링</string>
-    <string name="notification_action_to_transparency">주변음 허용으로 전환</string>
-    <string name="notification_action_to_noise_cancellation">노이즈 캔슬링으로 전환</string>
+    <string name="notification_noise_cancellation_switch">노이즈 캔슬링 (끄면 주변음 허용)</string>
     <string name="qs_tile_label">AirPods 소음 제어</string>
     <string name="qs_tile_not_connected">연결 안 됨</string>
     <string name="custom_build">수정본</string>

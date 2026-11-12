@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Content of the "AirPods connected" notification (AirPodsService.updateNotificationContent).
+     The switch turns Noise Cancellation on, or off to Transparency. The system adds the app icon
+     and header around this, and a collapsed notification gets only 48dp of height, so it is one
+     row: two lines of text and the switch. The switch draws its own thumb and track so that it
+     looks and measures the same whatever theme the notification panel inflates it with. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/notification_connected_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/noise_cancellation"
+            android:textAppearance="@style/TextAppearance.Compat.Notification.Title" />
+
+        <TextView
+            android:id="@+id/notification_connected_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="@style/TextAppearance.Compat.Notification"
+            tools:text="L: 80% R: 75% Case: 60%" />
+    </LinearLayout>
+
+    <Switch
+        android:id="@+id/notification_connected_switch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:background="@null"
+        android:contentDescription="@string/notification_noise_cancellation_switch"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:padding="0dp"
+        android:showText="false"
+        android:switchMinWidth="48dp"
+        android:switchPadding="0dp"
+        android:textOff=""
+        android:textOn=""
+        android:thumb="@drawable/notification_switch_thumb"
+        android:thumbTint="@color/notification_switch_thumb"
+        android:track="@drawable/notification_switch_track"
+        android:trackTint="@color/notification_switch_track"
+        tools:ignore="UseSwitchCompatOrMaterialXml" />
+</LinearLayout>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Thumb of the switch in the AirPods notification (layout/notification_connected.xml): an
+     18dp circle in a 24dp box, so it sits 3dp inside the 24dp-high track. Colored by
+     android:thumbTint. Layer insets (not an inset drawable) so Switch does not treat them as
+     padding or optical insets. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:bottom="3dp"
+        android:left="3dp"
+        android:right="3dp"
+        android:top="3dp">
+        <shape android:shape="oval">
+            <solid android:color="@android:color/white" />
+            <size
+                android:width="18dp"
+                android:height="18dp" />
+        </shape>
+    </item>
+</layer-list>

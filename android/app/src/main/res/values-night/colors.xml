@@ -5,4 +5,7 @@
     <color name="widget_background">#1C1B1E</color>
     <color name="widget_text">@color/white</color>
     <color name="colorBackground">#0B0B0B</color>
+    <color name="notification_switch_track_on">@android:color/system_accent1_400</color>
+    <color name="notification_switch_track_off">#FF5F5F64</color>
+    <color name="notification_switch_thumb_off">#FFDCDCE0</color>
 </resources>
