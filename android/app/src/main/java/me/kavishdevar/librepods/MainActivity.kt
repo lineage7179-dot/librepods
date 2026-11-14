@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) reportOpenedFromConnectedNotification(intent)
 
         setContent {
             val sharedPreferences = LocalContext.current.getSharedPreferences("settings", MODE_PRIVATE)
@@ -105,6 +106,30 @@ class MainActivity : ComponentActivity() {
 
                 Main()
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        reportOpenedFromConnectedNotification(intent)
+    }
+
+    /**
+     * Opened from the "AirPods connected" notification: tells the service, which then posts the
+     * notification under a new id (AirPodsService.connectedNotificationId explains why).
+     */
+    private fun reportOpenedFromConnectedNotification(intent: Intent?) {
+        if (intent?.getBooleanExtra(AirPodsService.EXTRA_OPENED_FROM_CONNECTED_NOTIFICATION, false) != true) {
+            return
+        }
+        intent.removeExtra(AirPodsService.EXTRA_OPENED_FROM_CONNECTED_NOTIFICATION)
+        try {
+            startService(
+                Intent(this, AirPodsService::class.java)
+                    .setAction(AirPodsService.ACTION_CONNECTED_NOTIFICATION_OPENED)
+            )
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Could not report the notification click: $e")
         }
     }
 

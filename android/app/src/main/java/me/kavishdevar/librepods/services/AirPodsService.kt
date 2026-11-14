@@ -250,9 +250,18 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         private const val ACTION_SET_NOISE_CANCELLATION =
             "me.kavishdevar.librepods.SET_NOISE_CANCELLATION"
 
-        /** The "AirPods connected" notification takes turns between these two ids. */
-        private const val CONNECTED_NOTIFICATION_ID = 2
-        private const val CONNECTED_NOTIFICATION_ALT_ID = 4
+        /** Sent by MainActivity when it was opened from the "AirPods connected" notification. */
+        const val ACTION_CONNECTED_NOTIFICATION_OPENED =
+            "me.kavishdevar.librepods.CONNECTED_NOTIFICATION_OPENED"
+        const val EXTRA_OPENED_FROM_CONNECTED_NOTIFICATION =
+            "me.kavishdevar.librepods.extra.OPENED_FROM_CONNECTED_NOTIFICATION"
+
+        /** Ids of the "AirPods connected" notification, see connectedNotificationId. */
+        private const val PREF_CONNECTED_NOTIFICATION_ID = "connected_notification_id"
+        private const val FIRST_CONNECTED_NOTIFICATION_ID = 100
+        private const val LAST_CONNECTED_NOTIFICATION_ID = 999_999
+        /** Ids earlier builds posted it under. */
+        private val LEGACY_CONNECTED_NOTIFICATION_IDS = intArrayOf(2, 4)
 
         /** Listening mode values (1 Off and 4 Adaptive are the others). */
         private const val LISTENING_MODE_NOISE_CANCELLATION = 2
@@ -2111,25 +2120,39 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     private val connectedNotificationLock = Any()
     private var lastConnectedNotificationKey: String? = null
-    /** Id the connected notification is posted under; it changes with the listening mode. */
-    private var connectedNotificationId = CONNECTED_NOTIFICATION_ID
-    /** Listening mode the posted connected notification shows; null while none is posted. */
-    private var connectedNotificationMode: Int? = null
+    /** Set once this run has removed copies left under the ids of earlier builds. */
+    private var legacyConnectedNotificationsCleared = false
+    private val notificationStatePreferences by lazy {
+        getSharedPreferences("settings", MODE_PRIVATE)
+    }
+
+    /**
+     * Id the connected notification is posted under. On One UI 8 the notification filter moved
+     * this notification into the collapsed "more notifications" group after its old toggle
+     * button had been clicked, and later posts under that id kept landing there, even after
+     * the notification had been removed, while an id whose notification had only had its
+     * switch flipped stayed on top (the system reports button and body clicks, not taps on a
+     * custom view). So flipping the switch keeps the id and updates the notification in place,
+     * and opening the app from the notification, the Reconnect button and swiping it away move
+     * it to a new id ([moveConnectedNotificationToNewId]). Kept in the preferences, so that an
+     * id is not used again after a restart.
+     */
+    private val connectedNotificationId: Int
+        get() = notificationStatePreferences.getInt(
+            PREF_CONNECTED_NOTIFICATION_ID, FIRST_CONNECTED_NOTIFICATION_ID
+        )
 
     /**
      * Shows or removes the "AirPods connected" notification.
      *
      * It is an ordinary notification, not the foreground-service one (id 1): One UI files
      * foreground-service notifications under "background activity" and moves them to the
-     * bottom of the panel. Its content is a custom layout with a Noise Cancellation switch
-     * (on: Noise Cancellation, off: Transparency) that shows without expanding it.
-     *
-     * A new listening mode is posted as a new notification under the other of two ids: One UI's
-     * notification filter moved this notification down into the collapsed "more notifications"
-     * group once its button had been used, and updating it in place kept it there. Other
-     * changes (battery) update it in place. It is only posted when something visible
-     * changed, because this is called for incoming packets, and calls are serialized because
-     * they come from the Bluetooth reader thread as well as the main thread.
+     * bottom of the panel. Its content is a custom layout that shows without expanding it: the
+     * listening mode in words, the battery, and a switch (on: Noise Cancellation, off:
+     * Transparency). Changes update it in place under [connectedNotificationId]. It is only
+     * posted when something visible changed, because this is called for incoming packets, and
+     * calls are serialized because they come from the Bluetooth reader thread as well as the
+     * main thread.
      */
     @OptIn(ExperimentalMaterial3Api::class)
     fun updateNotificationContent(
@@ -2174,32 +2197,35 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 // with hidden content, watch, notification history).
                 val contentText =
                     listOf(battery, modeName).filter { it.isNotEmpty() }.joinToString(" · ")
-                // Under "Noise Cancellation", next to the switch. Off normally means
-                // Transparency, so only Off and Adaptive are spelled out.
-                val switchText = listOf(
-                    modeName.takeIf {
-                        listeningMode != LISTENING_MODE_NOISE_CANCELLATION &&
-                            listeningMode != LISTENING_MODE_TRANSPARENCY
-                    }.orEmpty(),
-                    battery
-                ).filter { it.isNotEmpty() }.joinToString(" · ")
                 val showReconnect = disconnectedBecauseReversed
 
                 val key = "$title\n$listeningMode\n$contentText\n$showReconnect"
                 if (key == lastConnectedNotificationKey) return
 
+                // Tells MainActivity that it was opened from here (the id then changes, see
+                // connectedNotificationId). Clear-top and single-top, so that a running
+                // MainActivity gets it too (onNewIntent).
                 val pendingIntent = PendingIntent.getActivity(
                     this,
-                    0,
-                    Intent(this, MainActivity::class.java),
+                    4,
+                    Intent(this, MainActivity::class.java).apply {
+                        putExtra(EXTRA_OPENED_FROM_CONNECTED_NOTIFICATION, true)
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
                 val content = RemoteViews(packageName, R.layout.notification_connected).apply {
-                    setTextViewText(R.id.notification_connected_text, switchText)
+                    // The mode in words (the switch is on only in Noise Cancellation), and
+                    // the battery under it.
+                    setTextViewText(
+                        R.id.notification_connected_title,
+                        modeName.ifEmpty { getString(R.string.noise_cancellation) }
+                    )
+                    setTextViewText(R.id.notification_connected_text, battery)
                     setViewVisibility(
                         R.id.notification_connected_text,
-                        if (switchText.isEmpty()) View.GONE else View.VISIBLE
+                        if (battery.isEmpty()) View.GONE else View.VISIBLE
                     )
                     setCompoundButtonChecked(R.id.notification_connected_switch, noiseCancellationOn)
                     setOnCheckedChangeResponse(
@@ -2245,31 +2271,42 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     )
                 }
 
-                val postedMode = connectedNotificationMode
-                if (postedMode != null && postedMode != listeningMode) {
-                    connectedNotificationId = otherConnectedNotificationId()
+                if (!legacyConnectedNotificationsCleared) {
+                    LEGACY_CONNECTED_NOTIFICATION_IDS.forEach { notificationManager.cancel(it) }
+                    legacyConnectedNotificationsCleared = true
                 }
-                // The previous notification after a mode change, or one left by an earlier run.
-                notificationManager.cancel(otherConnectedNotificationId())
                 notificationManager.notify(connectedNotificationId, updatedNotificationBuilder.build())
-                connectedNotificationMode = listeningMode
                 lastConnectedNotificationKey = key
             } else if (!connected) {
                 // Not connected (or the socket is already gone). The foreground-service slot
                 // keeps its background notice, which stays hidden once its category is off.
                 lastConnectedNotificationKey = null
-                connectedNotificationMode = null
-                notificationManager.cancel(CONNECTED_NOTIFICATION_ID)
-                notificationManager.cancel(CONNECTED_NOTIFICATION_ALT_ID)
+                notificationManager.cancel(connectedNotificationId)
             } else if (BluetoothConnectionManager.aacpSocket != null && !config.bleOnlyMode) {
                 showSocketConnectionFailureNotification("BluetoothConnectionManager.aacpSocket? created, but not connected. Check logs")
             }
         }
     }
 
-    private fun otherConnectedNotificationId(): Int =
-        if (connectedNotificationId == CONNECTED_NOTIFICATION_ID) CONNECTED_NOTIFICATION_ALT_ID
-        else CONNECTED_NOTIFICATION_ID
+    /**
+     * Removes the connected notification and posts it again under the next id, after it was
+     * clicked or swiped away (see [connectedNotificationId]).
+     */
+    private fun moveConnectedNotificationToNewId() {
+        synchronized(connectedNotificationLock) {
+            val oldId = connectedNotificationId
+            val newId =
+                if (oldId in FIRST_CONNECTED_NOTIFICATION_ID until LAST_CONNECTED_NOTIFICATION_ID) {
+                    oldId + 1
+                } else {
+                    FIRST_CONNECTED_NOTIFICATION_ID
+                }
+            notificationStatePreferences.edit { putInt(PREF_CONNECTED_NOTIFICATION_ID, newId) }
+            getSystemService(NotificationManager::class.java).cancel(oldId)
+            lastConnectedNotificationKey = null
+        }
+        refreshConnectedNotification()
+    }
 
     /** Re-posts the connected notification with the current name, battery and mode. */
     private fun refreshConnectedNotification(force: Boolean = false) {
@@ -2640,13 +2677,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             }
         }
 
-        if (intent?.action == ACTION_CONNECTED_NOTIFICATION_DISMISSED) {
-            refreshConnectedNotification(force = true)
+        // Swiped away while still connected, or clicked to open the app: post it again, under
+        // a new id (see connectedNotificationId).
+        if (intent?.action == ACTION_CONNECTED_NOTIFICATION_DISMISSED ||
+            intent?.action == ACTION_CONNECTED_NOTIFICATION_OPENED
+        ) {
+            moveConnectedNotificationToNewId()
         }
 
         if (intent?.action == "me.kavishdevar.librepods.RECONNECT_AFTER_REVERSE") {
             Log.d(TAG, "reconnect after reversed received, taking over")
             disconnectedBecauseReversed = false
+            // The Reconnect button is a click on the notification, like opening the app.
+            moveConnectedNotificationToNewId()
             otherDeviceTookOver = false
             takeOver("music", manualTakeOverAfterReversed = true)
         }
