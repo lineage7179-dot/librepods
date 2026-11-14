@@ -329,6 +329,8 @@
     <string name="head_shake_toast_transparency">Head shake: Transparency</string>
     <string name="head_shake_toast_noise_cancellation">Head shake: Noise Cancellation</string>
     <string name="notification_noise_cancellation_switch">Noise Cancellation (off: Transparency)</string>
+    <string name="notification_diagnostics">Notification diagnostics</string>
+    <string name="notification_diagnostics_copy">Tap to copy</string>
     <string name="qs_tile_label">AirPods Noise Control</string>
     <string name="qs_tile_not_connected">Not connected</string>
     <string name="custom_build">Custom build</string>

@@ -18,15 +18,20 @@
 
 package me.kavishdevar.librepods.presentation.components
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import me.kavishdevar.librepods.BuildConfig
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.utils.NotificationDiagnostics
 
 @Composable
 fun AppInfoCard(
     navigateToReleaseNotesScreen: (() -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     StyledList(title = stringResource(R.string.about)) {
         StyledListItem(
             name = stringResource(R.string.version),
@@ -38,6 +43,20 @@ fun AppInfoCard(
             StyledListItem(
                 name = stringResource(R.string.custom_build),
                 description = BuildConfig.CUSTOM_BUILD,
+            )
+            // What happened to the "AirPods connected" notification, to paste into a report.
+            // The system shows its own "copied" confirmation.
+            StyledListItem(
+                name = stringResource(R.string.notification_diagnostics),
+                description = stringResource(R.string.notification_diagnostics_copy),
+                onClick = {
+                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
+                        ClipData.newPlainText(
+                            "LibrePods notification diagnostics",
+                            NotificationDiagnostics.report(context)
+                        )
+                    )
+                }
             )
         }
 
