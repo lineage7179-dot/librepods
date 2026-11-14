@@ -2127,15 +2127,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     }
 
     /**
-     * Id the connected notification is posted under. On One UI 8 the notification filter moved
-     * this notification into the collapsed "more notifications" group after its old toggle
-     * button had been clicked, and later posts under that id kept landing there, even after
-     * the notification had been removed, while an id whose notification had only had its
-     * switch flipped stayed on top (the system reports button and body clicks, not taps on a
-     * custom view). So flipping the switch keeps the id and updates the notification in place,
-     * and opening the app from the notification, the Reconnect button and swiping it away move
-     * it to a new id ([moveConnectedNotificationToNewId]). Kept in the preferences, so that an
-     * id is not used again after a restart.
+     * Id the connected notification is posted under. Flipping the switch keeps the id: the
+     * notification is updated in place. Opening the app from the notification, the Reconnect
+     * button and swiping it away post it again under a new id
+     * ([moveConnectedNotificationToNewId]), so that it comes back as a new notification rather
+     * than one that was already clicked or dismissed (One UI kept posts under the id of the old
+     * build, whose toggle button had been clicked, in the "more notifications" group). Kept in
+     * the preferences, so that an id is not used again after a restart.
      */
     private val connectedNotificationId: Int
         get() = notificationStatePreferences.getInt(
@@ -2145,14 +2143,15 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     /**
      * Shows or removes the "AirPods connected" notification.
      *
-     * It is an ordinary notification, not the foreground-service one (id 1): One UI files
-     * foreground-service notifications under "background activity" and moves them to the
-     * bottom of the panel. Its content is a custom layout that shows without expanding it: the
-     * listening mode in words, the battery, and a switch (on: Noise Cancellation, off:
-     * Transparency). Changes update it in place under [connectedNotificationId]. It is only
-     * posted when something visible changed, because this is called for incoming packets, and
-     * calls are serialized because they come from the Bluetooth reader thread as well as the
-     * main thread.
+     * It is an ordinary, dismissible notification, not the foreground-service one (id 1) and not
+     * ongoing: One UI's notification filter files foreground-service and ongoing notifications
+     * under "Background activities" and moves them into the collapsed "more notifications"
+     * group at the bottom of the panel. Swiped away while connected, it is posted again. Its
+     * content is a custom layout that shows without expanding it: the listening mode in words,
+     * the battery, and a switch (on: Noise Cancellation, off: Transparency). Changes update it
+     * in place under [connectedNotificationId]. It is only posted when something visible
+     * changed, because this is called for incoming packets, and calls are serialized because
+     * they come from the Bluetooth reader thread as well as the main thread.
      */
     @OptIn(ExperimentalMaterial3Api::class)
     fun updateNotificationContent(
@@ -2250,9 +2249,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         .setContentTitle(title).setContentText(contentText).setSubText(title)
                         .setStyle(NotificationCompat.DecoratedCustomViewStyle())
                         .setCustomContentView(content)
-                        .setContentIntent(pendingIntent).setCategory(Notification.CATEGORY_STATUS)
-                        .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true)
-                        // Swiped away while still connected: put it back (see onStartCommand).
+                        .setContentIntent(pendingIntent)
+                        // Neither ongoing nor in the status category: One UI's notification
+                        // filter files ongoing status notices under "Background activities", in
+                        // the collapsed "more notifications" group at the bottom of the panel.
+                        .setPriority(NotificationCompat.PRIORITY_LOW).setOnlyAlertOnce(true)
+                        // Swiped away (or cleared) while still connected: put it back (see
+                        // onStartCommand), so it stays while the AirPods are connected.
                         .setDeleteIntent(
                             PendingIntent.getService(
                                 this, 2, Intent(this, AirPodsService::class.java).apply {
